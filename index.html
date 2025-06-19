@@ -46,8 +46,8 @@
         <thead>
           <tr class="bg-gray-200">
             <th class="border border-gray-300 p-2">File</th>
-            <th class="border border-gray-300 p-2">Status</th>
-            <th class="border border-gray-300 p-2">Last Updated</th>
+            <th class="border border-gray-300 p-2">Upstream days</th>
+            <th class="border border-gray-300 p-2">Custom days</th>
             <th class="border border-gray-300 p-2">Details</th>
           </tr>
         </thead>
@@ -64,6 +64,14 @@
     const UPSTREAM_OWNER = 'gristlabs';
     const UPSTREAM_REPO = 'grist-core';
     const FILE_PATH = 'custom-files.json';
+    const CURRENT_DATE = new Date('2025-06-19T15:09:00+10:00'); // Fixed to AEST
+
+    // Calculate days since a given date
+    function calculateDaysSince(date) {
+      if (!date) return Infinity;
+      const diffMs = CURRENT_DATE - new Date(date);
+      return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    }
 
     // Load token from localStorage
     const tokenInput = document.getElementById('github-token');
@@ -252,27 +260,16 @@
             }
           }
 
-          // Determine status and row color
-          let status = hasContentChanges ? 'Upstream changed' : 'No changes';
-          let rowColor = '';
-          let dateStatus = 'Unknown';
+          // Calculate days
+          const customDays = customDate ? calculateDaysSince(customDate) : 0; // New file in custom-ui
+          const upstreamDays = upstreamDate ? calculateDaysSince(upstreamDate) : Infinity; // No upstream history
 
-          if (customDate && upstreamDate) {
-            if (customDate > upstreamDate) {
-              rowColor = 'bg-green-100';
-              dateStatus = `Custom-UI: ${customDate.toISOString().split('T')[0]}`;
-            } else if (upstreamDate > customDate) {
-              rowColor = 'bg-red-100';
-              dateStatus = `Upstream: ${upstreamDate.toISOString().split('T')[0]}`;
-            } else {
-              dateStatus = `Equal: ${customDate.toISOString().split('T')[0]}`;
-            }
-          } else if (customDate) {
-            rowColor = 'bg-green-100';
-            dateStatus = `Custom-UI: ${customDate.toISOString().split('T')[0]} (No upstream history)`;
-          } else if (upstreamDate) {
-            rowColor = 'bg-red-100';
-            dateStatus = `Upstream: ${upstreamDate.toISOString().split('T')[0]} (No custom-ui history)`;
+          // Determine row color
+          let rowColor = '';
+          if (customDays > upstreamDays) {
+            rowColor = 'bg-red-100'; // Custom-ui is older
+          } else if (upstreamDays > customDays) {
+            rowColor = 'bg-green-100'; // Upstream is older
           }
 
           const details = hasContentChanges
@@ -283,8 +280,8 @@
           row.className = rowColor;
           row.innerHTML = `
             <td class="border border-gray-300 p-2">${file}</td>
-            <td class="border border-gray-300 p-2">${status}</td>
-            <td class="border border-gray-300 p-2">${dateStatus}</td>
+            <td class="border border-gray-300 p-2">${upstreamDays === Infinity ? 'N/A' : upstreamDays}</td>
+            <td class="border border-gray-300 p-2">${customDays === 0 ? 'New' : customDays}</td>
             <td class="border border-gray-300 p-2">${details}</td>
           `;
           resultsBody.appendChild(row);
