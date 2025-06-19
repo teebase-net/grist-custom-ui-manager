@@ -47,6 +47,7 @@
           <tr class="bg-gray-200">
             <th class="border border-gray-300 p-2">File</th>
             <th class="border border-gray-300 p-2">Status</th>
+            <th class="border border-gray-300 p-2">Last Updated</th>
             <th class="border border-gray-300 p-2">Details</th>
           </tr>
         </thead>
@@ -220,20 +221,70 @@
 
         // Check each file
         for (const file of files) {
+          // Check for content changes
           const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?paths=${encodeURIComponent(file)}`;
-          const response = await fetch(compareUrl, { headers });
-          if (!response.ok) throw new Error(`Failed to check ${file}`);
-          const data = await response.json();
+          const compareResponse = await fetch(compareUrl, { headers });
+          if (!compareResponse.ok) throw new Error(`Failed to check ${file}`);
+          const compareData = await compareResponse.json();
+          const hasContentChanges = compareData.files.length > 0;
 
-          const row = document.createElement('tr');
-          const status = data.files.length > 0 ? 'Upstream changed' : 'No changes';
-          const details = data.files.length > 0
+          // Get last commit dates
+          let customDate = null;
+          let upstreamDate = null;
+
+          // Custom-ui branch commit date
+          const customCommitsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/commits?path=${encodeURIComponent(file)}&sha=${BRANCH}&per_page=1`;
+          const customCommitsResponse = await fetch(customCommitsUrl, { headers });
+          if (customCommitsResponse.ok) {
+            const customCommits = await customCommitsResponse.json();
+            if (customCommits.length > 0) {
+              customDate = new Date(customCommits[0].commit.author.date);
+            }
+          }
+
+          // Upstream latest tag commit date
+          const upstreamCommitsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits?path=${encodeURIComponent(file)}&sha=${latestTag}&per_page=1`;
+          const upstreamCommitsResponse = await fetch(upstreamCommitsUrl, { headers });
+          if (upstreamCommitsResponse.ok) {
+            const upstreamCommits = await upstreamCommitsResponse.json();
+            if (upstreamCommits.length > 0) {
+              upstreamDate = new Date(upstreamCommits[0].commit.author.date);
+            }
+          }
+
+          // Determine status and row color
+          let status = hasContentChanges ? 'Upstream changed' : 'No changes';
+          let rowColor = '';
+          let dateStatus = 'Unknown';
+
+          if (customDate && upstreamDate) {
+            if (customDate > upstreamDate) {
+              rowColor = 'bg-green-100';
+              dateStatus = `Custom-UI: ${customDate.toISOString().split('T')[0]}`;
+            } else if (upstreamDate > customDate) {
+              rowColor = 'bg-red-100';
+              dateStatus = `Upstream: ${upstreamDate.toISOString().split('T')[0]}`;
+            } else {
+              dateStatus = `Equal: ${customDate.toISOString().split('T')[0]}`;
+            }
+          } else if (customDate) {
+            rowColor = 'bg-green-100';
+            dateStatus = `Custom-UI: ${customDate.toISOString().split('T')[0]} (No upstream history)`;
+          } else if (upstreamDate) {
+            rowColor = 'bg-red-100';
+            dateStatus = `Upstream: ${upstreamDate.toISOString().split('T')[0]} (No custom-ui history)`;
+          }
+
+          const details = hasContentChanges
             ? `<a href="https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff</a>`
             : 'No action needed';
 
+          const row = document.createElement('tr');
+          row.className = rowColor;
           row.innerHTML = `
             <td class="border border-gray-300 p-2">${file}</td>
             <td class="border border-gray-300 p-2">${status}</td>
+            <td class="border border-gray-300 p-2">${dateStatus}</td>
             <td class="border border-gray-300 p-2">${details}</td>
           `;
           resultsBody.appendChild(row);
