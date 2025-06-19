@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grist Custom-UI Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="container mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
+    <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and check for upstream changes from <code>gristlabs/grist-core</code>.</p>
+
+    <!-- GitHub Token Input -->
+    <div class="mb-6">
+      <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
+      <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
+      <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser only.</p>
+    </div>
+
+    <!-- File Management -->
+    <div class="mb-6">
+      <h2 class="text-xl font-semibold mb-2">Customized Files</h2>
+      <div class="flex gap-4 mb-4">
+        <button id="detect-files" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Auto-Detect Files</button>
+        <button id="add-file" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Add File Manually</button>
+      </div>
+      <div id="file-form" class="hidden mb-4">
+        <input type="text" id="file-path" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., app/client/ui/CustomWidget.ts">
+        <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save</button>
+      </div>
+      <ul id="file-list" class="list-disc pl-5"></ul>
+    </div>
+
+    <!-- Upstream Check -->
+    <div class="mb-6">
+      <h2 class="text-xl font-semibold mb-2">Check Upstream Changes</h2>
+      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Check Latest Release</button>
+      <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
+    </div>
+
+    <!-- Results Table -->
+    <div id="results" class="hidden">
+      <h2 class="text-xl font-semibold mb-2">Results</h2>
+      <table class="w-full border-collapse border border-gray-300">
+        <thead>
+          <tr class="bg-gray-200">
+            <th class="border border-gray-300 p-2">File</th>
+            <th class="border border-gray-300 p-2">Status</th>
+            <th class="border border-gray-300 p-2">Details</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const GITHUB_API = 'https://api.github.com';
+    const OWNER = 'teebase-net';
+    const REPO = 'grist-core';
+    const BRANCH = 'custom-ui';
+    const UPSTREAM_OWNER = 'gristlabs';
+    const UPSTREAM_REPO = 'grist-core';
+    const FILE_PATH = 'custom-files.json';
+
+    // Load token from localStorage
+    const tokenInput = document.getElementById('github-token');
+    tokenInput.value = localStorage.getItem('github-token') || '';
+    tokenInput.addEventListener('change', () => {
+      localStorage.setItem('github-token', tokenInput.value);
+    });
+
+    // File management
+    let files = [];
+    const fileList = document.getElementById('file-list');
+    const fileForm = document.getElementById('file-form');
+    const filePathInput = document.getElementById('file-path');
+    const addFileBtn = document.getElementById('add-file');
+    const saveFileBtn = document.getElementById('save-file');
+
+    async function loadFiles() {
+      const token = tokenInput.value;
+      if (!token) {
+        alert('Please enter a GitHub Personal Access Token.');
+        return;
+      }
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const url = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`;
+        const response = await fetch(url, { headers });
+        if (response.status === 404) {
+          files = [];
+          await saveFiles(); // Create file if it doesn't exist
+        } else if (!response.ok) {
+          throw new Error('Failed to load custom-files.json');
+        } else {
+          const data = await response.json();
+          files = JSON.parse(atob(data.content));
+        }
+        renderFileList();
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    async function saveFiles() {
+      const token = tokenInput.value;
+      if (!token) {
+        alert('Please enter a GitHub Personal Access Token.');
+        return;
+      }
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        // Get current file SHA (if exists)
+        let sha = null;
+        const getUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`;
+        const getResponse = await fetch(getUrl, { headers });
+        if (getResponse.ok) {
+          const data = await getResponse.json();
+          sha = data.sha;
+        }
+        // Save file
+        const content = btoa(JSON.stringify(files, null, 2));
+        const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
+        const body = {
+          message: `Update ${FILE_PATH}`,
+          content,
+          branch: BRANCH,
+          sha
+        };
+        const putResponse = await fetch(putUrl, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(body)
+        });
+        if (!putResponse.ok) throw new Error('Failed to save custom-files.json');
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    function renderFileList() {
+      fileList.innerHTML = '';
+      files.forEach((file, index) => {
+        const li = document.createElement('li');
+        li.className = 'flex justify-between items-center';
+        li.innerHTML = `
+          <span>${file}</span>
+          <button class="text-red-600 hover:text-red-800" onclick="removeFile(${index})">Remove</button>
+        `;
+        fileList.appendChild(li);
+      });
+    }
+
+    addFileBtn.addEventListener('click', () => {
+      fileForm.classList.toggle('hidden');
+    });
+
+    saveFileBtn.addEventListener('click', async () => {
+      const path = filePathInput.value.trim();
+      if (path && !files.includes(path)) {
+        files.push(path);
+        await saveFiles();
+        renderFileList();
+        filePathInput.value = '';
+        fileForm.classList.add('hidden');
+      }
+    });
+
+    window.removeFile = async (index) => {
+      files.splice(index, 1);
+      await saveFiles();
+      renderFileList();
+    };
+
+    // Auto-detect files
+    document.getElementById('detect-files').addEventListener('click', async () => {
+      const token = tokenInput.value;
+      if (!token) {
+        alert('Please enter a GitHub Personal Access Token.');
+        return;
+      }
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
+        const response = await fetch(compareUrl, { headers });
+        if (!response.ok) throw new Error('Failed to fetch comparison');
+        const data = await response.json();
+        const newFiles = data.files.map(f => f.filename);
+        files = [...new Set([...files, ...newFiles])];
+        await saveFiles();
+        renderFileList();
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    });
+
+    // Check upstream changes
+    document.getElementById('check-upstream').addEventListener('click', async () => {
+      const token = tokenInput.value;
+      if (!token) {
+        alert('Please enter a GitHub Personal Access Token.');
+        return;
+      }
+      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+      const resultsBody = document.getElementById('results-body');
+      const latestTagEl = document.getElementById('latest-tag');
+      resultsBody.innerHTML = '';
+      document.getElementById('results').classList.remove('hidden');
+
+      try {
+        // Get latest upstream release tag
+        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags`;
+        const tagsResponse = await fetch(tagsUrl, { headers });
+        if (!tagsResponse.ok) throw new Error('Failed to fetch tags');
+        const tags = await tagsResponse.json();
+        const latestTag = tags[0].name;
+        latestTagEl.textContent = `Latest upstream release: ${latestTag}`;
+
+        // Check each file
+        for (const file of files) {
+          const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?paths=${encodeURIComponent(file)}`;
+          const response = await fetch(compareUrl, { headers });
+          if (!response.ok) throw new Error(`Failed to check ${file}`);
+          const data = await response.json();
+
+          const row = document.createElement('tr');
+          const status = data.files.length > 0 ? 'Upstream changed' : 'No changes';
+          const details = data.files.length > 0
+            ? `<a href="https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff</a>`
+            : 'No action needed';
+
+          row.innerHTML = `
+            <td class="border border-gray-300 p-2">${file}</td>
+            <td class="border border-gray-300 p-2">${status}</td>
+            <td class="border border-gray-300 p-2">${details}</td>
+          `;
+          resultsBody.appendChild(row);
+        }
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    });
+
+    // Initial load
+    loadFiles();
+  </script>
+</body>
+</html>
