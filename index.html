@@ -560,7 +560,7 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         if (!(await checkRateLimit(headers))) return;
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
+        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:${BRANCH}`;
         logDebug(`Fetching comparison for auto-detect: ${compareUrl}`);
         const response = await fetch(compareUrl, { headers });
         if (!response.ok) {
@@ -623,6 +623,29 @@
       }
     }
 
+    // Get files from repository tree
+    async function getRepoFiles(token, owner, repo, branch, path = '') {
+      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+      const treeUrl = `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+      logDebug(`Fetching file tree: ${treeUrl}`);
+      try {
+        const response = await fetch(treeUrl, { headers });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Failed to fetch tree: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        const data = await response.json();
+        const files = data.tree
+          .filter(item => item.type === 'blob' && /\.(ts|tsx|js|jsx|py|css|html)$/.test(item.path))
+          .map(item => item.path);
+        logDebug(`Found ${files.length} files in ${owner}/${repo}:${branch}: ${files.join(', ')}`);
+        return files;
+      } catch (error) {
+        logDebug(`Error fetching file tree: ${error.message}`);
+        return [];
+      }
+    }
+
     // Check upstream changes
     document.getElementById('check-upstream').addEventListener('click', async () => {
       const token = tokenInput.value;
@@ -659,7 +682,7 @@
         const tagsResponse = await fetch(tagsUrl, { headers });
         if (!tagsResponse.ok) {
           const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
@@ -667,29 +690,15 @@
         latestTagEl.textContent = `Latest upstream release: ${latestTag}`;
         logDebug(`Latest upstream tag: ${latestTag}`);
 
-        // Get non-customized files modified in teebase-net/grist-core:main
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
-        logDebug(`Fetching non-customized files: ${compareUrl}`);
-        const compareResponse = await fetch(compareUrl, { headers });
-        if (!compareResponse.ok) {
-          const errorData = await compareResponse.json().catch(() => ({}));
-          const message = `Failed to fetch comparison: ${compareResponse.status} ${compareResponse.statusText} - ${errorData.message || 'Unknown error'}`;
-          showError('upstream-error', message);
-          noUpdatesEl.textContent = 'Unable to compare branches. Ensure teebase-net/grist-core:main exists and differs from gristlabs/grist-core:main.';
-          noUpdatesEl.classList.remove('hidden');
-          throw new Error(message);
-        }
-        const compareData = await compareResponse.json();
-        const nonCustomFiles = compareData.files
-          ? compareData.files
-              .map(f => f.filename)
-              .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f))
-          : [];
-        logDebug(`Found ${nonCustomFiles.length} non-customized files in comparison: ${nonCustomFiles.join(', ') || 'none'}`);
+        // Get non-customized files from teebase-net/grist-core:main
+        const nonCustomFiles = await getRepoFiles(token, OWNER, REPO, 'main');
+        logDebug(`Found ${nonCustomFiles.length} files in teebase-net/grist-core:main: ${nonCustomFiles.join(', ') || 'none'}`);
+        const filteredNonCustom = nonCustomFiles.filter(f => !files.includes(f));
+        logDebug(`Filtered ${filteredNonCustom.length} non-customized files: ${filteredNonCustom.join(', ') || 'none'}`);
 
         // Filter non-customized files by version
         filteredNonCustomFiles = [];
-        for (const file of nonCustomFiles) {
+        for (const file of filteredNonCustom) {
           logDebug(`Checking upstream version for non-customized file: ${file}`);
           const latestTagForFile = await findLatestTagForFile(file, headers, tags);
           if (isVersionNewer(latestTagForFile, baseVersion)) {
@@ -715,9 +724,9 @@
             upstreamUpdatesBody.appendChild(row);
           });
         } else {
-          noUpdatesEl.textContent = nonCustomFiles.length > 0
-            ? 'No non-customized files have updates newer than the Base Version.'
-            : 'No differences found in teebase-net/grist-core:main compared to gristlabs/grist-core:main.';
+          noUpdatesEl.textContent = filteredNonCustom.length > 0
+            ? 'No non-customized files in teebase-net/grist-core:main have updates newer than the Base Version.'
+            : 'No code files found in teebase-net/grist-core:main.';
           noUpdatesEl.classList.remove('hidden');
         }
 
