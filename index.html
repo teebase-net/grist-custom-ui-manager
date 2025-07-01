@@ -65,7 +65,7 @@
 <body class="bg-gray-100 font-sans">
   <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
-    <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and update from <code>gristlabs/grist-core</code>.</p>
+    <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and update from <code>teebase-net/grist-core:main</code>.</p>
     <div id="init-error" class="error-message hidden">
       <span>Failed to initialize app. Check console for details.</span>
       <button onclick="this.parentElement.classList.add('hidden')">✕</button>
@@ -148,9 +148,9 @@
 
     <!-- Sync and Update custom-ui -->
     <div id="upstream-updates" class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Sync and Update custom-ui</h2>
+      <h2 class="text-xl font-semibold mb-2">Update custom-ui from main</h2>
       <button id="sync-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
-        Sync main and Update custom-ui <span id="sync-spinner" class="spinner"></span>
+        Update custom-ui <span id="sync-spinner" class="spinner"></span>
       </button>
       <div id="sync-message" class="info-message hidden">
         <span></span>
@@ -357,7 +357,7 @@
     function showInfo(id, message) {
       logDebug(`Info: ${message}`);
       const infoEl = document.getElementById(id);
-      infoEl.querySelector('span').innerHTML = `<pre>${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+      infoEl.querySelector('span').innerHTML = `<pre>${message.replace(/</g, '<').replace(/>/g, '>')}</pre>`;
       infoEl.classList.remove('hidden');
     }
 
@@ -477,21 +477,17 @@
             files = JSON.parse(content);
           } catch (error) {
             logDebug(`JSON parsing error: ${error.message}`);
-            // Attempt to fix common JSON issues (e.g., trailing comma)
             try {
               content = content.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}');
               files = JSON.parse(content);
               logDebug('Fixed and parsed custom-files.json');
               await saveFiles(); // Save corrected JSON
             } catch (fixError) {
-              showError('token-error', `custom-files.json is malformed and cannot be fixed automatically. Please edit it in teebase-net/grist-core:custom-ui on GitHub or run:\n` +
-                `git clone https://github.com/teebase-net/grist-core.git\n` +
-                `cd grist-core\n` +
-                `git checkout custom-ui\n` +
-                `# Edit custom-files.json to fix JSON (e.g., remove trailing comma)\n` +
-                `git add custom-files.json\n` +
-                `git commit -m "Fix malformed custom-files.json"\n` +
-                `git push origin custom-ui`);
+              showError('token-error', `custom-files.json is malformed and cannot be fixed automatically. Please edit it in teebase-net/grist-core:custom-ui on GitHub:\n` +
+                `1. Go to https://github.com/teebase-net/grist-core/blob/custom-ui/custom-files.json\n` +
+                `2. Click the pencil icon to edit\n` +
+                `3. Fix the JSON (e.g., remove trailing commas, ensure valid array)\n` +
+                `4. Commit changes to the custom-ui branch`);
               files = [];
               await saveFiles(); // Reset to empty array
             }
@@ -735,7 +731,7 @@
         const tagsResponse = await fetch(tagsUrl, { headers });
         if (!tagsResponse.ok) {
           const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
@@ -768,9 +764,9 @@
       }
     });
 
-    // Check version and update custom-ui
+    // Update custom-ui from main
     document.getElementById('sync-update').addEventListener('click', async () => {
-      logDebug('Clicked Sync main and Update custom-ui');
+      logDebug('Clicked Update custom-ui');
       const token = tokenInput.value;
       if (!token) {
         showError('sync-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
@@ -787,7 +783,7 @@
       try {
         if (!(await checkRateLimit(headers))) return;
 
-        // Check for version upgrade
+        // Check if main is behind upstream
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=1`;
         logDebug(`Fetching latest upstream tag: ${tagsUrl}`);
         const tagsResponse = await fetch(tagsUrl, { headers });
@@ -812,24 +808,24 @@
         logDebug(`teebase-net/grist-core:main is ${isBehind ? 'behind' : 'up to date'} with ${compareData.behind_by} commits`);
 
         if (isBehind) {
-          const syncCommands = `git clone https://github.com/teebase-net/grist-core.git
-cd grist-core
-git remote add upstream https://github.com/gristlabs/grist-core.git
-git fetch upstream
-git checkout main
-git merge upstream/main
-git push origin main`;
-          showInfo('sync-message', `Version upgrade detected (latest upstream: ${latestUpstreamTag}). Please sync teebase-net/grist-core:main by running:\n${syncCommands}`);
-          logDebug(`Prompting manual sync due to version upgrade`);
+          const syncInstructions = `To sync teebase-net/grist-core:main with gristlabs/grist-core:main:
+1. Go to https://github.com/teebase-net/grist-core
+2. Click "Branches" and ensure "main" exists
+3. Click "New pull request"
+4. Set base repository: teebase-net/grist-core, base: main
+5. Set compare repository: gristlabs/grist-core, compare: main
+6. Create the pull request and merge it to update main`;
+          showInfo('sync-message', `Version upgrade detected (latest upstream: ${latestUpstreamTag}).\n${syncInstructions}`);
+          logDebug(`Prompting web-based sync due to version upgrade`);
           return;
         }
 
-        // Fetch files from gristlabs/grist-core:main
-        const upstreamFiles = await getRepoFiles(token, UPSTREAM_OWNER, UPSTREAM_REPO, 'main');
-        if (upstreamFiles.length === 0) {
-          throw new Error('No code files found in gristlabs/grist-core:main');
+        // Fetch files from teebase-net/grist-core:main
+        const mainFiles = await getRepoFiles(token, OWNER, REPO, 'main');
+        if (mainFiles.length === 0) {
+          throw new Error('No code files found in teebase-net/grist-core:main');
         }
-        const filesToCopy = upstreamFiles.filter(f => !files.includes(f));
+        const filesToCopy = mainFiles.filter(f => !files.includes(f));
         logDebug(`Filtered ${filesToCopy.length} files to copy to custom-ui: ${filesToCopy.join(', ') || 'none'}`);
         logDebug(`Skipped ${files.length} customized files: ${files.join(', ') || 'none'}`);
         logDebug(`package.json ${files.includes('package.json') ? 'skipped (in custom-files.json)' : 'will be copied'}`);
@@ -847,20 +843,20 @@ git push origin main`;
           let content = '';
           let sha = null;
           try {
-            const upstreamUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/contents/${file}?ref=main`;
-            logDebug(`Fetching upstream content for ${file}: ${upstreamUrl}`);
-            const upstreamResponse = await fetch(upstreamUrl, { headers });
-            if (!upstreamResponse.ok) {
-              if (upstreamResponse.status === 404) {
-                content = ''; // File deleted upstream
-                logDebug(`File ${file} deleted upstream, setting empty content`);
+            const mainUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=main`;
+            logDebug(`Fetching main content for ${file}: ${mainUrl}`);
+            const mainResponse = await fetch(mainUrl, { headers });
+            if (!mainResponse.ok) {
+              if (mainResponse.status === 404) {
+                content = ''; // File deleted in main
+                logDebug(`File ${file} deleted in main, setting empty content`);
               } else {
-                const errorData = await upstreamResponse.json().catch(() => ({}));
-                throw new Error(`Failed to fetch upstream ${file}: ${upstreamResponse.status} ${upstreamResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+                const errorData = await mainResponse.json().catch(() => ({}));
+                throw new Error(`Failed to fetch main ${file}: ${mainResponse.status} ${mainResponse.statusText} - ${errorData.message || 'Unknown error'}`);
               }
             } else {
-              const upstreamData = await upstreamResponse.json();
-              content = atob(upstreamData.content);
+              const mainData = await mainResponse.json();
+              content = atob(mainData.content);
             }
           } catch (error) {
             showError('sync-error', `Failed to fetch content for ${file}: ${error.message}`);
@@ -885,7 +881,7 @@ git push origin main`;
 
           const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
           const body = {
-            message: `Update ${file} from upstream main to custom-ui`,
+            message: `Update ${file} from main to custom-ui`,
             content: content ? btoa(content) : '',
             branch: BRANCH,
             sha
@@ -905,7 +901,7 @@ git push origin main`;
         }
         showSuccess('sync-success', `Successfully copied ${copiedCount} files to custom-ui, skipped ${files.length} customized files`);
       } catch (error) {
-        showError('sync-error', `Error during sync and update: ${error.message}. Resolve conflicts manually on GitHub.`);
+        showError('sync-error', `Error during update: ${error.message}. Resolve conflicts manually on GitHub.`);
       } finally {
         toggleSpinner('sync-spinner', false);
         toggleButton('sync-update', false);
