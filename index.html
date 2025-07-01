@@ -146,7 +146,7 @@
       </table>
     </div>
 
-    <!-- Sync and Update custom-ui -->
+    <!-- Update custom-ui -->
     <div id="upstream-updates" class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Update custom-ui from main</h2>
       <button id="sync-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
@@ -613,7 +613,7 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         if (!(await checkRateLimit(headers))) return;
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:${BRANCH}`;
+        const compareUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/compare/main...${BRANCH}`;
         logDebug(`Fetching comparison for auto-detect: ${compareUrl}`);
         const response = await fetch(compareUrl, { headers });
         if (!response.ok) {
@@ -731,7 +731,7 @@
         const tagsResponse = await fetch(tagsUrl, { headers });
         if (!tagsResponse.ok) {
           const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
@@ -774,7 +774,7 @@
       }
       if (!(await checkRepoAndBranch(token))) return;
       if (!(await checkBranch(token, OWNER, REPO, 'main'))) {
-        showError('sync-error', 'Main branch not found in teebase-net/grist-core. Please create it.');
+        showError('sync-error', 'Main branch not found in teebase-net/grist-core. Please create it on GitHub.');
         return;
       }
       toggleSpinner('sync-spinner', true);
@@ -782,43 +782,6 @@
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       try {
         if (!(await checkRateLimit(headers))) return;
-
-        // Check if main is behind upstream
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=1`;
-        logDebug(`Fetching latest upstream tag: ${tagsUrl}`);
-        const tagsResponse = await fetch(tagsUrl, { headers });
-        if (!tagsResponse.ok) {
-          const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch upstream tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        const tags = await tagsResponse.json();
-        if (tags.length === 0) throw new Error('No upstream tags found');
-        const latestUpstreamTag = tags[0].name;
-        logDebug(`Latest upstream tag: ${latestUpstreamTag}`);
-
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
-        logDebug(`Checking version difference: ${compareUrl}`);
-        const compareResponse = await fetch(compareUrl, { headers });
-        if (!compareResponse.ok) {
-          const errorData = await compareResponse.json().catch(() => ({}));
-          throw new Error(`Failed to compare branches: ${compareResponse.status} ${compareResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        const compareData = await compareResponse.json();
-        const isBehind = compareData.behind_by > 0;
-        logDebug(`teebase-net/grist-core:main is ${isBehind ? 'behind' : 'up to date'} with ${compareData.behind_by} commits`);
-
-        if (isBehind) {
-          const syncInstructions = `To sync teebase-net/grist-core:main with gristlabs/grist-core:main:
-1. Go to https://github.com/teebase-net/grist-core
-2. Click "Branches" and ensure "main" exists
-3. Click "New pull request"
-4. Set base repository: teebase-net/grist-core, base: main
-5. Set compare repository: gristlabs/grist-core, compare: main
-6. Create the pull request and merge it to update main`;
-          showInfo('sync-message', `Version upgrade detected (latest upstream: ${latestUpstreamTag}).\n${syncInstructions}`);
-          logDebug(`Prompting web-based sync due to version upgrade`);
-          return;
-        }
 
         // Fetch files from teebase-net/grist-core:main
         const mainFiles = await getRepoFiles(token, OWNER, REPO, 'main');
@@ -901,7 +864,7 @@
         }
         showSuccess('sync-success', `Successfully copied ${copiedCount} files to custom-ui, skipped ${files.length} customized files`);
       } catch (error) {
-        showError('sync-error', `Error during update: ${error.message}. Resolve conflicts manually on GitHub.`);
+        showError('sync-error', `Error during update: ${error.message}. Resolve conflicts manually on GitHub at https://github.com/teebase-net/grist-core/tree/custom-ui.`);
       } finally {
         toggleSpinner('sync-spinner', false);
         toggleButton('sync-update', false);
