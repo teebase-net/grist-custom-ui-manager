@@ -21,22 +21,33 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-    .error-message {
+    .error-message, .success-message {
       position: relative;
       padding: 8px 16px;
-      background-color: #fee2e2;
-      border: 1px solid #ef4444;
       border-radius: 4px;
       margin-top: 8px;
     }
-    .error-message button {
+    .error-message {
+      background-color: #fee2e2;
+      border: 1px solid #ef4444;
+    }
+    .success-message {
+      background-color: #d1fae5;
+      border: 1px solid #10b981;
+    }
+    .error-message button, .success-message button {
       position: absolute;
       top: 8px;
       right: 8px;
       background: none;
       border: none;
-      color: #ef4444;
       cursor: pointer;
+    }
+    .error-message button {
+      color: #ef4444;
+    }
+    .success-message button {
+      color: #10b981;
     }
   </style>
 </head>
@@ -58,6 +69,10 @@
         Set Token <span id="token-spinner" class="spinner"></span>
       </button>
       <div id="token-error" class="error-message hidden">
+        <span></span>
+        <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+      </div>
+      <div id="token-success" class="success-message hidden">
         <span></span>
         <button onclick="this.parentElement.classList.add('hidden')">✕</button>
       </div>
@@ -163,12 +178,28 @@
       document.getElementById(id).style.display = show ? 'inline-block' : 'none';
     }
 
+    // Disable/enable button
+    function toggleButton(id, disabled) {
+      const button = document.getElementById(id);
+      button.disabled = disabled;
+      button.classList.toggle('opacity-50', disabled);
+      button.classList.toggle('cursor-not-allowed', disabled);
+    }
+
     // Show error message
     function showError(id, message) {
       logDebug(`Error: ${message}`);
       const errorEl = document.getElementById(id);
       errorEl.querySelector('span').textContent = message;
       errorEl.classList.remove('hidden');
+    }
+
+    // Show success message
+    function showSuccess(id, message) {
+      logDebug(`Success: ${message}`);
+      const successEl = document.getElementById(id);
+      successEl.querySelector('span').textContent = message;
+      successEl.classList.remove('hidden');
     }
 
     // Check rate limit
@@ -186,7 +217,7 @@
           logDebug(`Rate limit: ${remaining}/${limit} remaining`);
           return true;
         }
-        throw new Error(`Failed to check rate limit: ${response.statusText}`);
+        throw new Error(`Failed to check rate limit: ${response.status} ${response.statusText}`);
       } catch (error) {
         showError('upstream-error', `Rate limit check failed: ${error.message}`);
         return false;
@@ -200,7 +231,10 @@
         const branchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/${BRANCH}`;
         logDebug(`Checking repo and branch: ${branchUrl}`);
         const response = await fetch(branchUrl, { headers });
-        if (!response.ok) throw new Error(`Custom-ui branch not found in ${OWNER}/${REPO}: ${response.statusText}`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Custom-ui branch not found in ${OWNER}/${REPO}: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
         return true;
       } catch (error) {
         showError('token-error', `Error: ${error.message}`);
@@ -224,10 +258,16 @@
         return;
       }
       toggleSpinner('token-spinner', true);
-      if (await checkRepoAndBranch(token)) {
-        await loadFiles();
+      toggleButton('set-token', true);
+      try {
+        if (await checkRepoAndBranch(token)) {
+          await loadFiles();
+          showSuccess('token-success', 'Token set successfully. Files loaded.');
+        }
+      } finally {
+        toggleSpinner('token-spinner', false);
+        toggleButton('set-token', false);
       }
-      toggleSpinner('token-spinner', false);
     });
 
     // Load files
@@ -247,8 +287,10 @@
         if (response.status === 404) {
           files = [];
           await saveFiles();
+          logDebug('Created empty custom-files.json');
         } else if (!response.ok) {
-          throw new Error(`Failed to load custom-files.json: ${response.status} ${response.statusText}`);
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Failed to load custom-files.json: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
         } else {
           const data = await response.json();
           files = JSON.parse(atob(data.content));
@@ -295,7 +337,10 @@
           headers,
           body: JSON.stringify(body)
         });
-        if (!putResponse.ok) throw new Error(`Failed to save custom-files.json: ${putResponse.status} ${putResponse.statusText}`);
+        if (!putResponse.ok) {
+          const errorData = await putResponse.json().catch(() => ({}));
+          throw new Error(`Failed to save custom-files.json: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
         logDebug(`${FILE_PATH} saved successfully`);
       } catch (error) {
         showError('token-error', `Error saving files: ${error.message}`);
@@ -373,7 +418,10 @@
         const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
         logDebug(`Fetching comparison: ${compareUrl}`);
         const response = await fetch(compareUrl, { headers });
-        if (!response.ok) throw new Error(`Failed to fetch comparison: ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Failed to fetch comparison: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
         const data = await response.json();
         const newFiles = data.files
           .map(f => f.filename)
@@ -412,7 +460,10 @@
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags`;
         logDebug(`Fetching tags: ${tagsUrl}`);
         const tagsResponse = await fetch(tagsUrl, { headers });
-        if (!tagsResponse.ok) throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText}`);
+        if (!tagsResponse.ok) {
+          const errorData = await tagsResponse.json().catch(() => ({}));
+          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
         const latestTag = tags[0].name;
@@ -423,7 +474,10 @@
         const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
         logDebug(`Fetching non-customized files: ${compareUrl}`);
         const compareResponse = await fetch(compareUrl, { headers });
-        if (!compareResponse.ok) throw new Error(`Failed to fetch comparison: ${compareResponse.status} ${compareResponse.statusText}`);
+        if (!compareResponse.ok) {
+          const errorData = await compareResponse.json().catch(() => ({}));
+          throw new Error(`Failed to fetch comparison: ${compareResponse.status} ${compareResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
         const compareData = await compareResponse.json();
         const nonCustomFiles = compareData.files
           .map(f => f.filename)
@@ -452,7 +506,10 @@
           const compareFileUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}`;
           logDebug(`Comparing file ${file}: ${compareFileUrl}`);
           const compareFileResponse = await fetch(compareFileUrl, { headers });
-          if (!compareFileResponse.ok) throw new Error(`Failed to check ${file}: ${compareFileResponse.status} ${compareFileResponse.statusText}`);
+          if (!compareFileResponse.ok) {
+            const errorData = await compareFileResponse.json().catch(() => ({}));
+            throw new Error(`Failed to check ${file}: ${compareFileResponse.status} ${compareFileResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+          }
           const compareFileData = await compareFileResponse.json();
           const hasContentChanges = compareFileData.files.some(f => f.filename === file);
 
@@ -501,3 +558,86 @@
         toggleSpinner('check-spinner', false);
       }
     });
+
+    // Update non-customized file
+    window.updateFile = async (file) => {
+      const token = tokenInput.value;
+      if (!token) {
+        showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
+        return;
+      }
+      if (!(await checkRepoAndBranch(token))) return;
+      toggleSpinner('check-spinner', true);
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        if (!(await checkRateLimit(headers))) return;
+        let content = '';
+        let sha = null;
+        // Get upstream file content
+        try {
+          const upstreamUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/contents/${file}?ref=main`;
+          logDebug(`Fetching upstream content for ${file}: ${upstreamUrl}`);
+          const upstreamResponse = await fetch(upstreamUrl, { headers });
+          if (!upstreamResponse.ok) {
+            if (upstreamResponse.status === 404) {
+              content = ''; // File deleted upstream
+            } else {
+              const errorData = await upstreamResponse.json().catch(() => ({}));
+              throw new Error(`Failed to fetch upstream ${file}: ${upstreamResponse.status} ${upstreamResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+            }
+          } else {
+            const upstreamData = await upstreamResponse.json();
+            content = atob(upstreamData.content);
+          }
+        } catch (error) {
+          throw error;
+        }
+        // Get current file SHA in custom-ui
+        try {
+          const customUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=${BRANCH}`;
+          logDebug(`Fetching SHA for ${file} in custom-ui: ${customUrl}`);
+          const customResponse = await fetch(customUrl, { headers });
+          if (customResponse.ok) {
+            const customData = await customResponse.json();
+            sha = customData.sha;
+          }
+        } catch (error) {
+          if (error.status !== 404) throw error;
+        }
+        // Update file in custom-ui
+        const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
+        const body = {
+          message: `Update ${file} from upstream main`,
+          content: btoa(content),
+          branch: BRANCH,
+          sha
+        };
+        logDebug(`Updating ${file}: ${putUrl}`);
+        const putResponse = await fetch(putUrl, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(body)
+        });
+        if (!putResponse.ok) {
+          const errorData = await putResponse.json().catch(() => ({}));
+          throw new Error(`Failed to update ${file}: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        showSuccess('upstream-error', `Successfully updated ${file}`);
+        document.getElementById('check-upstream').click();
+      } catch (error) {
+        showError('upstream-error', `Error updating ${file}: ${error.message}. Resolve conflicts manually on GitHub.`);
+      } finally {
+        toggleSpinner('check-spinner', false);
+      }
+    };
+
+    // Initial load
+    logDebug('Initializing app');
+    if (tokenInput.value) {
+      checkRepoAndBranch(tokenInput.value).then(valid => {
+        if (valid) loadFiles();
+      });
+    }
+  </script>
+</body>
+</html>
