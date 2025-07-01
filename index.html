@@ -66,8 +66,10 @@
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
       <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser (use caution: avoid sharing your token).</p>
       <label for="base-version" class="block text-sm font-medium text-gray-700 mt-4">Base Version (Latest gristlabs/grist-core tag custom-ui is updated against)</label>
-      <input type="text" id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="e.g., v1.0.9">
-      <p class="text-sm text-gray-500 mt-1">Enter the latest tag from gristlabs/grist-core that custom-ui is synced with.</p>
+      <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+        <option value="">Select a Base Version</option>
+      </select>
+      <p class="text-sm text-gray-500 mt-1">Select the latest tag from gristlabs/grist-core that custom-ui is synced with.</p>
       <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
         Set Token & Version <span id="token-spinner" class="spinner"></span>
       </button>
@@ -165,6 +167,7 @@
     let files = [];
     let visibleFiles = 10;
     let baseVersion = '';
+    let filteredNonCustomFiles = [];
 
     // Debug logging
     function logDebug(message) {
@@ -187,6 +190,55 @@
         return false;
       } catch {
         return true; // Fallback to assuming newer if parsing fails
+      }
+    }
+
+    // Sort tags in descending order
+    function sortTags(tags) {
+      return tags.sort((a, b) => {
+        const aParts = a.name.replace(/^v/, '').split('.').map(Number);
+        const bParts = b.name.replace(/^v/, '').split('.').map(Number);
+        for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+          const aNum = aParts[i] || 0;
+          const bNum = bParts[i] || 0;
+          if (aNum > bNum) return -1;
+          if (aNum < bNum) return 1;
+        }
+        return 0;
+      });
+    }
+
+    // Load tags into dropdown
+    async function loadTags(token) {
+      const baseVersionSelect = document.getElementById('base-version');
+      baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
+      baseVersionSelect.disabled = true;
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        if (!(await checkRateLimit(headers))) return;
+        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
+        logDebug(`Fetching tags: ${tagsUrl}`);
+        const response = await fetch(tagsUrl, { headers });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Failed to fetch tags: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        const tags = await response.json();
+        sortTags(tags).slice(0, 10).forEach(tag => {
+          const option = document.createElement('option');
+          option.value = tag.name;
+          option.textContent = tag.name;
+          baseVersionSelect.appendChild(option);
+        });
+        const savedVersion = localStorage.getItem('base-version');
+        if (savedVersion && tags.find(tag => tag.name === savedVersion)) {
+          baseVersionSelect.value = savedVersion;
+        }
+        baseVersionSelect.disabled = false;
+        logDebug(`Loaded ${tags.length} tags into dropdown`);
+      } catch (error) {
+        showError('token-error', `Error loading tags: ${error.message}`);
+        baseVersionSelect.disabled = true;
       }
     }
 
@@ -261,34 +313,34 @@
 
     // Load token and base version from localStorage
     const tokenInput = document.getElementById('github-token');
-    const baseVersionInput = document.getElementById('base-version');
+    const baseVersionSelect = document.getElementById('base-version');
     tokenInput.value = localStorage.getItem('github-token') || '';
-    baseVersionInput.value = localStorage.getItem('base-version') || '';
     tokenInput.addEventListener('input', () => {
       localStorage.setItem('github-token', tokenInput.value);
       logDebug('Token updated in localStorage');
     });
-    baseVersionInput.addEventListener('input', () => {
-      localStorage.setItem('base-version', baseVersionInput.value);
+    baseVersionSelect.addEventListener('change', () => {
+      localStorage.setItem('base-version', baseVersionSelect.value);
       logDebug('Base version updated in localStorage');
     });
 
     // Set token and version
     document.getElementById('set-token').addEventListener('click', async () => {
       const token = tokenInput.value.trim();
-      baseVersion = baseVersionInput.value.trim();
+      baseVersion = baseVersionSelect.value;
       if (!token) {
         showError('token-error', 'Please enter a GitHub Personal Access Token.');
         return;
       }
       if (!baseVersion) {
-        showError('token-error', 'Please enter a Base Version (e.g., v1.0.9).');
+        showError('token-error', 'Please select a Base Version.');
         return;
       }
       toggleSpinner('token-spinner', true);
       toggleButton('set-token', true);
       try {
         if (await checkRepoAndBranch(token)) {
+          await loadTags(token);
           await loadFiles();
           showSuccess('token-success', 'Token and Base Version set successfully. Files loaded.');
         }
@@ -478,7 +530,7 @@
         const commits = await commitsResponse.json();
         if (!commits.length) return 'main'; // Fallback to main if no commits
 
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=100`;
+        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
         const tagsResponse = await fetch(tagsUrl, { headers });
         if (!tagsResponse.ok) {
           const errorData = await tagsResponse.json().catch(() => ({}));
@@ -511,7 +563,7 @@
         return;
       }
       if (!baseVersion) {
-        showError('upstream-error', 'Please enter a Base Version and click Set Token & Version.');
+        showError('upstream-error', 'Please select a Base Version and click Set Token & Version.');
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
@@ -527,7 +579,7 @@
       try {
         if (!(await checkRateLimit(headers))) return;
         // Get latest upstream tag
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags`;
+        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
         logDebug(`Fetching tags: ${tagsUrl}`);
         const tagsResponse = await fetch(tagsUrl, { headers });
         if (!tagsResponse.ok) {
@@ -536,7 +588,7 @@
         }
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
-        const latestTag = tags[0].name;
+        const latestTag = sortTags(tags)[0].name;
         latestTagEl.textContent = `Latest upstream release: ${latestTag}`;
         logDebug(`Latest upstream tag: ${latestTag}`);
 
@@ -554,7 +606,7 @@
           .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f));
 
         // Filter non-customized files by version
-        const filteredNonCustomFiles = [];
+        filteredNonCustomFiles = [];
         for (const file of nonCustomFiles) {
           const latestTagForFile = await findLatestTagForFile(file, headers);
           if (isVersionNewer(latestTagForFile, baseVersion)) {
@@ -607,14 +659,14 @@
     });
 
     // Batch update selected files
-    document.getElementById('batch-update').addEventListener('click', async () => {
+    document.getAmount('batch-update').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
         showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
         return;
       }
       if (!baseVersion) {
-        showError('upstream-error', 'Please enter a Base Version and click Set Token & Version.');
+        showError('upstream-error', 'Please select a Base Version and click Set Token & Version.');
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
@@ -699,11 +751,15 @@
 
     // Initial load
     logDebug('Initializing app');
-    if (tokenInput.value && baseVersionInput.value) {
+    if (tokenInput.value) {
       checkRepoAndBranch(tokenInput.value).then(valid => {
         if (valid) {
-          baseVersion = baseVersionInput.value;
-          loadFiles();
+          loadTags(tokenInput.value).then(() => {
+            baseVersion = baseVersionSelect.value;
+            if (baseVersion) {
+              loadFiles();
+            }
+          });
         }
       });
     }
