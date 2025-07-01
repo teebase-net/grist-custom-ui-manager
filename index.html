@@ -233,6 +233,24 @@
       }
     }
 
+    // Check branch existence
+    async function checkBranch(token, owner, repo, branch) {
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const branchUrl = `${GITHUB_API}/repos/${owner}/${repo}/branches/${branch}`;
+        logDebug(`Checking branch: ${branchUrl}`);
+        const response = await fetch(branchUrl, { headers });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Branch ${branch} not found in ${owner}/${repo}: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        return true;
+      } catch (error) {
+        logDebug(`Branch check error: ${error.message}`);
+        return false;
+      }
+    }
+
     // Load tags into dropdown
     async function loadTags(token) {
       const baseVersionSelect = document.getElementById('base-version');
@@ -503,8 +521,8 @@
         showError('file-error', 'File path cannot be empty.');
         return;
       }
-      if (!/\.(ts|js|py|css|html)$/.test(path)) {
-        showError('file-error', 'Please enter a valid code file path (e.g., .ts, .js, .py, .css, .html).');
+      if (!/\.(ts|tsx|js|jsx|py|css|html)$/.test(path)) {
+        showError('file-error', 'Please enter a valid code file path (e.g., .ts, .tsx, .js, .jsx, .py, .css, .html).');
         return;
       }
       if (!files.includes(path)) {
@@ -551,10 +569,12 @@
         }
         const data = await response.json();
         const newFiles = data.files
-          .map(f => f.filename)
-          .filter(f => !/\.(md|txt|doc|json)$/.test(f));
+          ? data.files
+              .map(f => f.filename)
+              .filter(f => !/\.(md|txt|doc|json)$/.test(f))
+          : [];
         files = [...new Set([...files, ...newFiles])];
-        logDebug(`Detected ${newFiles.length} new files`);
+        logDebug(`Detected ${newFiles.length} new files: ${newFiles.join(', ')}`);
         await saveFiles();
         renderFileList();
       } catch (error) {
@@ -565,7 +585,7 @@
     });
 
     // Find latest tag for a file
-    async function findLatestTagForFile(file, headers) {
+    async function findLatestTagForFile(file, headers, tags) {
       try {
         const commitsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits?path=${encodeURIComponent(file)}&per_page=100`;
         logDebug(`Fetching commits for ${file}: ${commitsUrl}`);
@@ -577,18 +597,6 @@
         const commits = await commitsResponse.json();
         if (!commits.length) {
           logDebug(`No commits found for ${file}, defaulting to main`);
-          return 'main';
-        }
-
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
-        const tagsResponse = await fetch(tagsUrl, { headers });
-        if (!tagsResponse.ok) {
-          const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        const tags = await tagsResponse.json();
-        if (!tags.length) {
-          logDebug(`No tags found, defaulting to main for ${file}`);
           return 'main';
         }
 
@@ -627,6 +635,10 @@
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
+      if (!(await checkBranch(token, OWNER, REPO, 'main'))) {
+        showError('upstream-error', 'Main branch not found in teebase-net/grist-core. Please ensure it exists.');
+        return;
+      }
       toggleSpinner('check-spinner', true);
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       const resultsBody = document.getElementById('results-body');
@@ -641,13 +653,13 @@
 
       try {
         if (!(await checkRateLimit(headers))) return;
-        // Get latest upstream tag
+        // Get latest upstream tags
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
         logDebug(`Fetching tags: ${tagsUrl}`);
         const tagsResponse = await fetch(tagsUrl, { headers });
         if (!tagsResponse.ok) {
           const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
@@ -661,7 +673,11 @@
         const compareResponse = await fetch(compareUrl, { headers });
         if (!compareResponse.ok) {
           const errorData = await compareResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch comparison: ${compareResponse.status} ${compareResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+          const message = `Failed to fetch comparison: ${compareResponse.status} ${compareResponse.statusText} - ${errorData.message || 'Unknown error'}`;
+          showError('upstream-error', message);
+          noUpdatesEl.textContent = 'Unable to compare branches. Ensure teebase-net/grist-core:main exists and differs from gristlabs/grist-core:main.';
+          noUpdatesEl.classList.remove('hidden');
+          throw new Error(message);
         }
         const compareData = await compareResponse.json();
         const nonCustomFiles = compareData.files
@@ -669,13 +685,13 @@
               .map(f => f.filename)
               .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f))
           : [];
-        logDebug(`Found ${nonCustomFiles.length} non-customized files in comparison`);
+        logDebug(`Found ${nonCustomFiles.length} non-customized files in comparison: ${nonCustomFiles.join(', ') || 'none'}`);
 
         // Filter non-customized files by version
         filteredNonCustomFiles = [];
         for (const file of nonCustomFiles) {
           logDebug(`Checking upstream version for non-customized file: ${file}`);
-          const latestTagForFile = await findLatestTagForFile(file, headers);
+          const latestTagForFile = await findLatestTagForFile(file, headers, tags);
           if (isVersionNewer(latestTagForFile, baseVersion)) {
             filteredNonCustomFiles.push({ file, latestTag: latestTagForFile });
             logDebug(`Non-customized file ${file} has newer version ${latestTagForFile}`);
@@ -699,13 +715,16 @@
             upstreamUpdatesBody.appendChild(row);
           });
         } else {
+          noUpdatesEl.textContent = nonCustomFiles.length > 0
+            ? 'No non-customized files have updates newer than the Base Version.'
+            : 'No differences found in teebase-net/grist-core:main compared to gristlabs/grist-core:main.';
           noUpdatesEl.classList.remove('hidden');
         }
 
         // Check each customized file
         for (const file of files) {
           logDebug(`Checking upstream version for customized file: ${file}`);
-          const latestTagForFile = await findLatestTagForFile(file, headers);
+          const latestTagForFile = await findLatestTagForFile(file, headers, tags);
           const needsUpdate = isVersionNewer(latestTagForFile, baseVersion);
           const rowColor = needsUpdate ? 'bg-red-100' : '';
           const details = needsUpdate
@@ -723,6 +742,7 @@
         }
       } catch (error) {
         showError('upstream-error', `Error checking upstream: ${error.message}`);
+        noUpdatesEl.textContent = 'Unable to check for updates. Check console for details.';
         noUpdatesEl.classList.remove('hidden');
       } finally {
         toggleSpinner('check-spinner', false);
@@ -753,7 +773,7 @@
             selectedFiles.push(filteredNonCustomFiles[index].file);
           }
         });
-        logDebug(`Batch updating ${selectedFiles.length} files`);
+        logDebug(`Batch updating ${selectedFiles.length} files: ${selectedFiles.join(', ')}`);
         if (selectedFiles.length === 0) {
           showError('upstream-error', 'No files selected for batch update.');
           return;
