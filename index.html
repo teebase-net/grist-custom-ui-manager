@@ -66,9 +66,12 @@
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
       <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser (use caution: avoid sharing your token).</p>
       <label for="base-version" class="block text-sm font-medium text-gray-700 mt-4">Base Version (Latest gristlabs/grist-core tag custom-ui is updated against)</label>
-      <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-        <option value="">Select a Base Version</option>
-      </select>
+      <div class="flex items-center">
+        <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
+          <option value="">Select a Base Version</option>
+        </select>
+        <span id="base-version-spinner" class="spinner"></span>
+      </div>
       <p class="text-sm text-gray-500 mt-1">Select the latest tag from gristlabs/grist-core that custom-ui is synced with.</p>
       <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
         Set Token & Version <span id="token-spinner" class="spinner"></span>
@@ -208,14 +211,40 @@
       });
     }
 
+    // Validate PAT
+    async function validatePat(token) {
+      try {
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const userUrl = `${GITHUB_API}/user`;
+        logDebug(`Validating PAT: ${userUrl}`);
+        const response = await fetch(userUrl, { headers });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Invalid PAT: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        logDebug('PAT validated successfully');
+        return true;
+      } catch (error) {
+        showError('token-error', `PAT validation failed: ${error.message}`);
+        logDebug(`PAT validation error: ${error.message}`);
+        return false;
+      }
+    }
+
     // Load tags into dropdown
     async function loadTags(token) {
       const baseVersionSelect = document.getElementById('base-version');
       baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
       baseVersionSelect.disabled = true;
+      toggleSpinner('base-version-spinner', true);
       try {
+        if (!(await validatePat(token))) {
+          throw new Error('Invalid or missing PAT. Please enter a valid token.');
+        }
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        if (!(await checkRateLimit(headers))) return;
+        if (!(await checkRateLimit(headers))) {
+          throw new Error('GitHub API rate limit exceeded. Try again later.');
+        }
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
         logDebug(`Fetching tags: ${tagsUrl}`);
         const response = await fetch(tagsUrl, { headers });
@@ -224,6 +253,10 @@
           throw new Error(`Failed to fetch tags: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const tags = await response.json();
+        if (tags.length === 0) {
+          baseVersionSelect.innerHTML = '<option value="">No tags available</option>';
+          throw new Error('No tags found in gristlabs/grist-core');
+        }
         sortTags(tags).slice(0, 10).forEach(tag => {
           const option = document.createElement('option');
           option.value = tag.name;
@@ -237,8 +270,12 @@
         baseVersionSelect.disabled = false;
         logDebug(`Loaded ${tags.length} tags into dropdown`);
       } catch (error) {
-        showError('token-error', `Error loading tags: ${error.message}`);
+        showError('token-error', `Failed to load tags: ${error.message}. Check your PAT or GitHub API status.`);
+        baseVersionSelect.innerHTML = '<option value="">Failed to load tags</option>';
         baseVersionSelect.disabled = true;
+        logDebug(`Tag loading error: ${error.message}`);
+      } finally {
+        toggleSpinner('base-version-spinner', false);
       }
     }
 
@@ -318,6 +355,9 @@
     tokenInput.addEventListener('input', () => {
       localStorage.setItem('github-token', tokenInput.value);
       logDebug('Token updated in localStorage');
+      if (tokenInput.value) {
+        loadTags(tokenInput.value);
+      }
     });
     baseVersionSelect.addEventListener('change', () => {
       localStorage.setItem('base-version', baseVersionSelect.value);
@@ -341,9 +381,14 @@
       try {
         if (await checkRepoAndBranch(token)) {
           await loadTags(token);
+          if (baseVersionSelect.options.length <= 1) {
+            throw new Error('No tags loaded. Check your PAT or GitHub API status.');
+          }
           await loadFiles();
           showSuccess('token-success', 'Token and Base Version set successfully. Files loaded.');
         }
+      } catch (error) {
+        showError('token-error', `Error setting token and version: ${error.message}`);
       } finally {
         toggleSpinner('token-spinner', false);
         toggleButton('set-token', false);
@@ -659,7 +704,7 @@
     });
 
     // Batch update selected files
-    document.getAmount('batch-update').addEventListener('click', async () => {
+    document.getElementById('batch-update').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
         showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
