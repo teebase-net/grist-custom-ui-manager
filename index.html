@@ -60,13 +60,16 @@
       <button onclick="this.parentElement.classList.add('hidden')">✕</button>
     </div>
 
-    <!-- GitHub Token Input -->
+    <!-- GitHub Token and Base Version Input -->
     <div class="mb-6">
       <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
       <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser (use caution: avoid sharing your token).</p>
+      <label for="base-version" class="block text-sm font-medium text-gray-700 mt-4">Base Version (Latest gristlabs/grist-core tag custom-ui is updated against)</label>
+      <input type="text" id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="e.g., v1.0.9">
+      <p class="text-sm text-gray-500 mt-1">Enter the latest tag from gristlabs/grist-core that custom-ui is synced with.</p>
       <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
-        Set Token <span id="token-spinner" class="spinner"></span>
+        Set Token & Version <span id="token-spinner" class="spinner"></span>
       </button>
       <div id="token-error" class="error-message hidden">
         <span></span>
@@ -103,7 +106,7 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Check Upstream Changes</h2>
       <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
-        Check Latest Release <span id="check-spinner" class="spinner"></span>
+        Check Latest Changes <span id="check-spinner" class="spinner"></span>
       </button>
       <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
       <div id="upstream-error" class="error-message hidden">
@@ -112,15 +115,14 @@
       </div>
     </div>
 
-    <!-- Results Table -->
+    <!-- Customized Files Status -->
     <div id="results" class="hidden mb-6">
       <h2 class="text-xl font-semibold mb-2">Customized Files Status</h2>
       <table class="w-full border-collapse border border-gray-300">
         <thead>
           <tr class="bg-gray-200">
             <th class="border border-gray-300 p-2">File</th>
-            <th class="border border-gray-300 p-2">Upstream Days</th>
-            <th class="border border-gray-300 p-2">Custom Days</th>
+            <th class="border border-gray-300 p-2">Upstream Version</th>
             <th class="border border-gray-300 p-2">Details</th>
           </tr>
         </thead>
@@ -128,17 +130,21 @@
       </table>
     </div>
 
-    <!-- Non-Customized Files -->
-    <div id="non-custom-files" class="hidden">
-      <h2 class="text-xl font-semibold mb-2">Non-Customized Modified Files</h2>
+    <!-- Upstream Updates (not customized in custom-ui) -->
+    <div id="upstream-updates" class="hidden mb-6">
+      <h2 class="text-xl font-semibold mb-2">Upstream Updates (not customized in custom-ui)</h2>
+      <button id="batch-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
+        Batch Update Selected <span id="batch-spinner" class="spinner"></span>
+      </button>
       <table class="w-full border-collapse border border-gray-300">
         <thead>
           <tr class="bg-gray-200">
             <th class="border border-gray-300 p-2">File</th>
-            <th class="border border-gray-300 p-2">Action</th>
+            <th class="border border-gray-300 p-2">Upstream Version</th>
+            <th class="border border-gray-300 p-2">Update</th>
           </tr>
         </thead>
-        <tbody id="non-custom-files-body"></tbody>
+        <tbody id="upstream-updates-body"></tbody>
       </table>
     </div>
 
@@ -158,19 +164,30 @@
     const FILE_PATH = 'custom-files.json';
     let files = [];
     let visibleFiles = 10;
+    let baseVersion = '';
 
     // Debug logging
     function logDebug(message) {
       console.log(`[Grist Custom-UI Manager @ ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' })}] ${message}`);
     }
 
-    // Calculate days since a given date
-    function calculateDaysSince(date) {
-      if (!date) return Infinity;
-      const currentDate = new Date();
-      currentDate.setUTCHours(0, 0, 0, 0);
-      const diffMs = currentDate - new Date(date);
-      return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    // Compare version tags
+    function isVersionNewer(tag, base) {
+      if (!base) return true;
+      if (tag === 'main') return true; // Treat main as newer than any tag
+      try {
+        const tagParts = tag.replace(/^v/, '').split('.').map(Number);
+        const baseParts = base.replace(/^v/, '').split('.').map(Number);
+        for (let i = 0; i < Math.max(tagParts.length, baseParts.length); i++) {
+          const tagNum = tagParts[i] || 0;
+          const baseNum = baseParts[i] || 0;
+          if (tagNum > baseNum) return true;
+          if (tagNum < baseNum) return false;
+        }
+        return false;
+      } catch {
+        return true; // Fallback to assuming newer if parsing fails
+      }
     }
 
     // Show/hide loading spinner
@@ -242,19 +259,30 @@
       }
     }
 
-    // Load token from localStorage
+    // Load token and base version from localStorage
     const tokenInput = document.getElementById('github-token');
+    const baseVersionInput = document.getElementById('base-version');
     tokenInput.value = localStorage.getItem('github-token') || '';
+    baseVersionInput.value = localStorage.getItem('base-version') || '';
     tokenInput.addEventListener('input', () => {
       localStorage.setItem('github-token', tokenInput.value);
       logDebug('Token updated in localStorage');
     });
+    baseVersionInput.addEventListener('input', () => {
+      localStorage.setItem('base-version', baseVersionInput.value);
+      logDebug('Base version updated in localStorage');
+    });
 
-    // Set token explicitly
+    // Set token and version
     document.getElementById('set-token').addEventListener('click', async () => {
       const token = tokenInput.value.trim();
+      baseVersion = baseVersionInput.value.trim();
       if (!token) {
         showError('token-error', 'Please enter a GitHub Personal Access Token.');
+        return;
+      }
+      if (!baseVersion) {
+        showError('token-error', 'Please enter a Base Version (e.g., v1.0.9).');
         return;
       }
       toggleSpinner('token-spinner', true);
@@ -262,7 +290,7 @@
       try {
         if (await checkRepoAndBranch(token)) {
           await loadFiles();
-          showSuccess('token-success', 'Token set successfully. Files loaded.');
+          showSuccess('token-success', 'Token and Base Version set successfully. Files loaded.');
         }
       } finally {
         toggleSpinner('token-spinner', false);
@@ -274,7 +302,7 @@
     async function loadFiles() {
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
+        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
         return;
       }
       toggleSpinner('detect-spinner', true);
@@ -407,7 +435,7 @@
     document.getElementById('detect-files').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
+        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
@@ -415,7 +443,7 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         if (!(await checkRateLimit(headers))) return;
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
+        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
         logDebug(`Fetching comparison: ${compareUrl}`);
         const response = await fetch(compareUrl, { headers });
         if (!response.ok) {
@@ -437,21 +465,63 @@
       }
     });
 
+    // Find latest tag for a file
+    async function findLatestTagForFile(file, headers) {
+      try {
+        const commitsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits?path=${encodeURIComponent(file)}&per_page=100`;
+        logDebug(`Fetching commits for ${file}: ${commitsUrl}`);
+        const commitsResponse = await fetch(commitsUrl, { headers });
+        if (!commitsResponse.ok) {
+          const errorData = await commitsResponse.json().catch(() => ({}));
+          throw new Error(`Failed to fetch commits for ${file}: ${commitsResponse.status} ${commitsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        const commits = await commitsResponse.json();
+        if (!commits.length) return 'main'; // Fallback to main if no commits
+
+        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=100`;
+        const tagsResponse = await fetch(tagsUrl, { headers });
+        if (!tagsResponse.ok) {
+          const errorData = await tagsResponse.json().catch(() => ({}));
+          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        const tags = await tagsResponse.json();
+        if (!tags.length) return 'main'; // Fallback to main if no tags
+
+        for (const tag of tags) {
+          const commitUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits/${tag.commit.sha}`;
+          const commitResponse = await fetch(commitUrl, { headers });
+          if (!commitResponse.ok) continue;
+          const commitData = await commitResponse.json();
+          const commitDate = new Date(commitData.commit.author.date);
+          const fileCommits = commits.filter(c => new Date(c.commit.author.date) <= commitDate);
+          if (fileCommits.length) return tag.name;
+        }
+        return 'main'; // Fallback if no matching tag
+      } catch (error) {
+        logDebug(`Error finding latest tag for ${file}: ${error.message}`);
+        return 'main';
+      }
+    }
+
     // Check upstream changes
     document.getElementById('check-upstream').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
+        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
+        return;
+      }
+      if (!baseVersion) {
+        showError('upstream-error', 'Please enter a Base Version and click Set Token & Version.');
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
       toggleSpinner('check-spinner', true);
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       const resultsBody = document.getElementById('results-body');
-      const nonCustomBody = document.getElementById('non-custom-files-body');
+      const upstreamUpdatesBody = document.getElementById('upstream-updates-body');
       const latestTagEl = document.getElementById('latest-tag');
       resultsBody.innerHTML = '';
-      nonCustomBody.innerHTML = '';
+      upstreamUpdatesBody.innerHTML = '';
       document.getElementById('results').classList.remove('hidden');
 
       try {
@@ -470,8 +540,8 @@
         latestTagEl.textContent = `Latest upstream release: ${latestTag}`;
         logDebug(`Latest upstream tag: ${latestTag}`);
 
-        // Get non-customized files
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
+        // Get non-customized files modified in teebase-net/grist-core:main
+        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
         logDebug(`Fetching non-customized files: ${compareUrl}`);
         const compareResponse = await fetch(compareUrl, { headers });
         if (!compareResponse.ok) {
@@ -482,72 +552,49 @@
         const nonCustomFiles = compareData.files
           .map(f => f.filename)
           .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f));
-        logDebug(`Found ${nonCustomFiles.length} non-customized files`);
+
+        // Filter non-customized files by version
+        const filteredNonCustomFiles = [];
+        for (const file of nonCustomFiles) {
+          const latestTagForFile = await findLatestTagForFile(file, headers);
+          if (isVersionNewer(latestTagForFile, baseVersion)) {
+            filteredNonCustomFiles.push({ file, latestTag: latestTagForFile });
+          }
+        }
+        logDebug(`Found ${filteredNonCustomFiles.length} non-customized files needing update`);
 
         // Render non-customized files
-        if (nonCustomFiles.length) {
-          document.getElementById('non-custom-files').classList.remove('hidden');
-          nonCustomFiles.forEach(file => {
+        if (filteredNonCustomFiles.length) {
+          document.getElementById('upstream-updates').classList.remove('hidden');
+          filteredNonCustomFiles.forEach(({ file, latestTag }, index) => {
             const row = document.createElement('tr');
             row.innerHTML = `
               <td class="border border-gray-300 p-2">${file}</td>
+              <td class="border border-gray-300 p-2">${latestTag}</td>
               <td class="border border-gray-300 p-2">
-                <button onclick="updateFile('${file}')" class="bg-yellow-600 text-white px-4 py-1 rounded-md hover:bg-yellow-700">Update</button>
+                <input type="checkbox" id="update-${index}" checked>
               </td>
             `;
-            nonCustomBody.appendChild(row);
+            upstreamUpdatesBody.appendChild(row);
           });
         } else {
-          document.getElementById('non-custom-files').classList.add('hidden');
+          document.getElementById('upstream-updates').classList.add('hidden');
         }
 
         // Check each customized file
         for (const file of files) {
-          const compareFileUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}`;
-          logDebug(`Comparing file ${file}: ${compareFileUrl}`);
-          const compareFileResponse = await fetch(compareFileUrl, { headers });
-          if (!compareFileResponse.ok) {
-            const errorData = await compareFileResponse.json().catch(() => ({}));
-            throw new Error(`Failed to check ${file}: ${compareFileResponse.status} ${compareFileResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-          }
-          const compareFileData = await compareFileResponse.json();
-          const hasContentChanges = compareFileData.files.some(f => f.filename === file);
-
-          let customDate = null;
-          let upstreamDate = null;
-          const customCommitsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/commits?path=${encodeURIComponent(file)}&sha=${BRANCH}&per_page=1`;
-          logDebug(`Fetching custom commits for ${file}: ${customCommitsUrl}`);
-          const customCommitsResponse = await fetch(customCommitsUrl, { headers });
-          if (customCommitsResponse.ok) {
-            const customCommits = await customCommitsResponse.json();
-            if (customCommits.length) {
-              customDate = new Date(customCommits[0].commit.author.date);
-            }
-          }
-
-          const upstreamCommitsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits?path=${encodeURIComponent(file)}&sha=${latestTag}&per_page=1`;
-          logDebug(`Fetching upstream commits for ${file}: ${upstreamCommitsUrl}`);
-          const upstreamCommitsResponse = await fetch(upstreamCommitsUrl, { headers });
-          if (upstreamCommitsResponse.ok) {
-            const upstreamCommits = await upstreamCommitsResponse.json();
-            if (upstreamCommits.length) {
-              upstreamDate = new Date(upstreamCommits[0].commit.author.date);
-            }
-          }
-
-          const customDays = customDate ? calculateDaysSince(customDate) : 0;
-          const upstreamDays = upstreamDate ? calculateDaysSince(upstreamDate) : Infinity;
-          const rowColor = customDays > upstreamDays ? 'bg-red-100' : upstreamDays > customDays ? 'bg-green-100' : '';
-          const details = hasContentChanges
-            ? `<a href="https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff</a>`
-            : 'No changes detected';
+          const latestTagForFile = await findLatestTagForFile(file, headers);
+          const needsUpdate = isVersionNewer(latestTagForFile, baseVersion);
+          const rowColor = needsUpdate ? 'bg-red-100' : '';
+          const details = needsUpdate
+            ? `<a href="https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${baseVersion}...${latestTagForFile}?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff (Needs Manual Update)</a>`
+            : 'Up to date with Base Version';
 
           const row = document.createElement('tr');
           row.className = rowColor;
           row.innerHTML = `
             <td class="border border-gray-300 p-2">${file}</td>
-            <td class="border border-gray-300 p-2">${upstreamDays === Infinity ? 'Not in upstream' : upstreamDays}</td>
-            <td class="border border-gray-300 p-2">${customDays === 0 ? 'New' : customDays}</td>
+            <td class="border border-gray-300 p-2">${latestTagForFile}</td>
             <td class="border border-gray-300 p-2">${details}</td>
           `;
           resultsBody.appendChild(row);
@@ -559,83 +606,105 @@
       }
     });
 
-    // Update non-customized file
-    window.updateFile = async (file) => {
+    // Batch update selected files
+    document.getElementById('batch-update').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
-        showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
+        showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
+        return;
+      }
+      if (!baseVersion) {
+        showError('upstream-error', 'Please enter a Base Version and click Set Token & Version.');
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
-      toggleSpinner('check-spinner', true);
+      toggleSpinner('batch-spinner', true);
+      toggleButton('batch-update', true);
+      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         if (!(await checkRateLimit(headers))) return;
-        let content = '';
-        let sha = null;
-        // Get upstream file content
-        try {
-          const upstreamUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/contents/${file}?ref=main`;
-          logDebug(`Fetching upstream content for ${file}: ${upstreamUrl}`);
-          const upstreamResponse = await fetch(upstreamUrl, { headers });
-          if (!upstreamResponse.ok) {
-            if (upstreamResponse.status === 404) {
-              content = ''; // File deleted upstream
-            } else {
-              const errorData = await upstreamResponse.json().catch(() => ({}));
-              throw new Error(`Failed to fetch upstream ${file}: ${upstreamResponse.status} ${upstreamResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-            }
-          } else {
-            const upstreamData = await upstreamResponse.json();
-            content = atob(upstreamData.content);
+        const checkboxes = document.querySelectorAll('#upstream-updates-body input[type="checkbox"]');
+        const selectedFiles = [];
+        checkboxes.forEach((checkbox, index) => {
+          if (checkbox.checked) {
+            selectedFiles.push(filteredNonCustomFiles[index].file);
           }
-        } catch (error) {
-          throw error;
-        }
-        // Get current file SHA in custom-ui
-        try {
-          const customUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=${BRANCH}`;
-          logDebug(`Fetching SHA for ${file} in custom-ui: ${customUrl}`);
-          const customResponse = await fetch(customUrl, { headers });
-          if (customResponse.ok) {
-            const customData = await customResponse.json();
-            sha = customData.sha;
-          }
-        } catch (error) {
-          if (error.status !== 404) throw error;
-        }
-        // Update file in custom-ui
-        const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
-        const body = {
-          message: `Update ${file} from upstream main`,
-          content: btoa(content),
-          branch: BRANCH,
-          sha
-        };
-        logDebug(`Updating ${file}: ${putUrl}`);
-        const putResponse = await fetch(putUrl, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(body)
         });
-        if (!putResponse.ok) {
-          const errorData = await putResponse.json().catch(() => ({}));
-          throw new Error(`Failed to update ${file}: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        logDebug(`Batch updating ${selectedFiles.length} files`);
+        for (const file of selectedFiles) {
+          let content = '';
+          let sha = null;
+          // Get upstream file content
+          try {
+            const upstreamUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/contents/${file}?ref=main`;
+            logDebug(`Fetching upstream content for ${file}: ${upstreamUrl}`);
+            const upstreamResponse = await fetch(upstreamUrl, { headers });
+            if (!upstreamResponse.ok) {
+              if (upstreamResponse.status === 404) {
+                content = ''; // File deleted upstream
+              } else {
+                const errorData = await upstreamResponse.json().catch(() => ({}));
+                throw new Error(`Failed to fetch upstream ${file}: ${upstreamResponse.status} ${upstreamResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+              }
+            } else {
+              const upstreamData = await upstreamResponse.json();
+              content = atob(upstreamData.content);
+            }
+          } catch (error) {
+            throw error;
+          }
+          // Get current file SHA in custom-ui
+          try {
+            const customUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=${BRANCH}`;
+            logDebug(`Fetching SHA for ${file} in custom-ui: ${customUrl}`);
+            const customResponse = await fetch(customUrl, { headers });
+            if (customResponse.ok) {
+              const customData = await customResponse.json();
+              sha = customData.sha;
+            }
+          } catch (error) {
+            if (error.status !== 404) throw error;
+          }
+          // Update file in custom-ui
+          const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
+          const body = {
+            message: `Update ${file} from upstream main to custom-ui`,
+            content: btoa(content),
+            branch: BRANCH,
+            sha
+          };
+          logDebug(`Updating ${file}: ${putUrl}`);
+          const putResponse = await fetch(putUrl, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(body)
+          });
+          if (!putResponse.ok) {
+            const errorData = await putResponse.json().catch(() => ({}));
+            throw new Error(`Failed to update ${file}: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+          }
+          showSuccess('upstream-error', `Successfully updated ${file} in custom-ui`);
         }
-        showSuccess('upstream-error', `Successfully updated ${file}`);
+        if (selectedFiles.length > 0) {
+          showSuccess('upstream-error', `Successfully updated ${selectedFiles.length} files in custom-ui`);
+        }
         document.getElementById('check-upstream').click();
       } catch (error) {
-        showError('upstream-error', `Error updating ${file}: ${error.message}. Resolve conflicts manually on GitHub.`);
+        showError('upstream-error', `Error during batch update: ${error.message}. Resolve conflicts manually on GitHub.`);
       } finally {
-        toggleSpinner('check-spinner', false);
+        toggleSpinner('batch-spinner', false);
+        toggleButton('batch-update', false);
       }
-    };
+    });
 
     // Initial load
     logDebug('Initializing app');
-    if (tokenInput.value) {
+    if (tokenInput.value && baseVersionInput.value) {
       checkRepoAndBranch(tokenInput.value).then(valid => {
-        if (valid) loadFiles();
+        if (valid) {
+          baseVersion = baseVersionInput.value;
+          loadFiles();
+        }
       });
     }
   </script>
