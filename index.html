@@ -136,7 +136,7 @@
     </div>
 
     <!-- Upstream Updates (not customized in custom-ui) -->
-    <div id="upstream-updates" class="hidden mb-6">
+    <div id="upstream-updates" class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Upstream Updates (not customized in custom-ui)</h2>
       <button id="batch-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
         Batch Update Selected <span id="batch-spinner" class="spinner"></span>
@@ -151,6 +151,7 @@
         </thead>
         <tbody id="upstream-updates-body"></tbody>
       </table>
+      <p id="no-updates" class="text-sm text-gray-600 mt-2 hidden">No non-customized files with updates available.</p>
     </div>
 
     <!-- Rate Limit Info -->
@@ -192,6 +193,7 @@
         }
         return false;
       } catch {
+        logDebug(`Version comparison failed: tag=${tag}, base=${base}`);
         return true; // Fallback to assuming newer if parsing fails
       }
     }
@@ -541,7 +543,7 @@
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         if (!(await checkRateLimit(headers))) return;
         const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
-        logDebug(`Fetching comparison: ${compareUrl}`);
+        logDebug(`Fetching comparison for auto-detect: ${compareUrl}`);
         const response = await fetch(compareUrl, { headers });
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -573,7 +575,10 @@
           throw new Error(`Failed to fetch commits for ${file}: ${commitsResponse.status} ${commitsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const commits = await commitsResponse.json();
-        if (!commits.length) return 'main'; // Fallback to main if no commits
+        if (!commits.length) {
+          logDebug(`No commits found for ${file}, defaulting to main`);
+          return 'main';
+        }
 
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
         const tagsResponse = await fetch(tagsUrl, { headers });
@@ -582,18 +587,28 @@
           throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
         }
         const tags = await tagsResponse.json();
-        if (!tags.length) return 'main'; // Fallback to main if no tags
+        if (!tags.length) {
+          logDebug(`No tags found, defaulting to main for ${file}`);
+          return 'main';
+        }
 
         for (const tag of tags) {
           const commitUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits/${tag.commit.sha}`;
           const commitResponse = await fetch(commitUrl, { headers });
-          if (!commitResponse.ok) continue;
+          if (!commitResponse.ok) {
+            logDebug(`Skipping tag ${tag.name} due to commit fetch error`);
+            continue;
+          }
           const commitData = await commitResponse.json();
           const commitDate = new Date(commitData.commit.author.date);
           const fileCommits = commits.filter(c => new Date(c.commit.author.date) <= commitDate);
-          if (fileCommits.length) return tag.name;
+          if (fileCommits.length) {
+            logDebug(`Found tag ${tag.name} for ${file}`);
+            return tag.name;
+          }
         }
-        return 'main'; // Fallback if no matching tag
+        logDebug(`No matching tag found for ${file}, defaulting to main`);
+        return 'main';
       } catch (error) {
         logDebug(`Error finding latest tag for ${file}: ${error.message}`);
         return 'main';
@@ -617,9 +632,12 @@
       const resultsBody = document.getElementById('results-body');
       const upstreamUpdatesBody = document.getElementById('upstream-updates-body');
       const latestTagEl = document.getElementById('latest-tag');
+      const noUpdatesEl = document.getElementById('no-updates');
       resultsBody.innerHTML = '';
       upstreamUpdatesBody.innerHTML = '';
+      noUpdatesEl.classList.add('hidden');
       document.getElementById('results').classList.remove('hidden');
+      document.getElementById('upstream-updates').classList.remove('hidden');
 
       try {
         if (!(await checkRateLimit(headers))) return;
@@ -647,39 +665,46 @@
         }
         const compareData = await compareResponse.json();
         const nonCustomFiles = compareData.files
-          .map(f => f.filename)
-          .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f));
+          ? compareData.files
+              .map(f => f.filename)
+              .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f))
+          : [];
+        logDebug(`Found ${nonCustomFiles.length} non-customized files in comparison`);
 
         // Filter non-customized files by version
         filteredNonCustomFiles = [];
         for (const file of nonCustomFiles) {
+          logDebug(`Checking upstream version for non-customized file: ${file}`);
           const latestTagForFile = await findLatestTagForFile(file, headers);
           if (isVersionNewer(latestTagForFile, baseVersion)) {
             filteredNonCustomFiles.push({ file, latestTag: latestTagForFile });
+            logDebug(`Non-customized file ${file} has newer version ${latestTagForFile}`);
+          } else {
+            logDebug(`Non-customized file ${file} version ${latestTagForFile} is not newer than base ${baseVersion}`);
           }
         }
-        logDebug(`Found ${filteredNonCustomFiles.length} non-customized files needing update`);
+        logDebug(`Filtered ${filteredNonCustomFiles.length} non-customized files needing update`);
 
         // Render non-customized files
-        if (filteredNonCustomFiles.length) {
-          document.getElementById('upstream-updates').classList.remove('hidden');
+        if (filteredNonCustomFiles.length > 0) {
           filteredNonCustomFiles.forEach(({ file, latestTag }, index) => {
             const row = document.createElement('tr');
             row.innerHTML = `
               <td class="border border-gray-300 p-2">${file}</td>
               <td class="border border-gray-300 p-2">${latestTag}</td>
               <td class="border border-gray-300 p-2">
-                <input type="checkbox" id="update-${index}" checked>
+                <input type="checkbox" id="update-noncustom-${index}" checked>
               </td>
             `;
             upstreamUpdatesBody.appendChild(row);
           });
         } else {
-          document.getElementById('upstream-updates').classList.add('hidden');
+          noUpdatesEl.classList.remove('hidden');
         }
 
         // Check each customized file
         for (const file of files) {
+          logDebug(`Checking upstream version for customized file: ${file}`);
           const latestTagForFile = await findLatestTagForFile(file, headers);
           const needsUpdate = isVersionNewer(latestTagForFile, baseVersion);
           const rowColor = needsUpdate ? 'bg-red-100' : '';
@@ -698,6 +723,7 @@
         }
       } catch (error) {
         showError('upstream-error', `Error checking upstream: ${error.message}`);
+        noUpdatesEl.classList.remove('hidden');
       } finally {
         toggleSpinner('check-spinner', false);
       }
@@ -728,7 +754,12 @@
           }
         });
         logDebug(`Batch updating ${selectedFiles.length} files`);
+        if (selectedFiles.length === 0) {
+          showError('upstream-error', 'No files selected for batch update.');
+          return;
+        }
         for (const file of selectedFiles) {
+          logDebug(`Processing batch update for ${file}`);
           let content = '';
           let sha = null;
           // Get upstream file content
@@ -739,6 +770,7 @@
             if (!upstreamResponse.ok) {
               if (upstreamResponse.status === 404) {
                 content = ''; // File deleted upstream
+                logDebug(`File ${file} deleted upstream, setting empty content`);
               } else {
                 const errorData = await upstreamResponse.json().catch(() => ({}));
                 throw new Error(`Failed to fetch upstream ${file}: ${upstreamResponse.status} ${upstreamResponse.statusText} - ${errorData.message || 'Unknown error'}`);
@@ -748,6 +780,7 @@
               content = atob(upstreamData.content);
             }
           } catch (error) {
+            showError('upstream-error', `Failed to fetch content for ${file}: ${error.message}`);
             throw error;
           }
           // Get current file SHA in custom-ui
@@ -760,13 +793,17 @@
               sha = customData.sha;
             }
           } catch (error) {
-            if (error.status !== 404) throw error;
+            if (error.message.includes('404')) {
+              logDebug(`File ${file} not found in custom-ui, no SHA needed`);
+            } else {
+              throw error;
+            }
           }
           // Update file in custom-ui
           const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
           const body = {
             message: `Update ${file} from upstream main to custom-ui`,
-            content: btoa(content),
+            content: content ? btoa(content) : '',
             branch: BRANCH,
             sha
           };
@@ -782,9 +819,7 @@
           }
           showSuccess('upstream-error', `Successfully updated ${file} in custom-ui`);
         }
-        if (selectedFiles.length > 0) {
-          showSuccess('upstream-error', `Successfully updated ${selectedFiles.length} files in custom-ui`);
-        }
+        showSuccess('upstream-error', `Successfully updated ${selectedFiles.length} files in custom-ui`);
         document.getElementById('check-upstream').click();
       } catch (error) {
         showError('upstream-error', `Error during batch update: ${error.message}. Resolve conflicts manually on GitHub.`);
