@@ -5,153 +5,173 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grist Custom-UI Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .spinner {
+      display: none;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3498db;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body class="bg-gray-100 font-sans">
   <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
-    <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and check for upstream changes from <code>gristlabs/grist-core</code>.</p>
+    <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and update from <code>gristlabs/grist-core</code>.</p>
 
     <!-- GitHub Token Input -->
     <div class="mb-6">
       <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
-      <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser only.</p>
+      <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Set Token</button>
+      <p id="token-error" class="text-sm text-red-600 mt-1 hidden"></p>
     </div>
 
     <!-- File Management -->
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Customized Files</h2>
       <div class="flex gap-4 mb-4">
-        <button id="detect-files" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Auto-Detect Files</button>
+        <button id="detect-files" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 flex items-center">
+          Auto-Detect Files <span id="detect-spinner" class="spinner"></span>
+        </button>
         <button id="add-file" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Add File Manually</button>
       </div>
       <div id="file-form" class="hidden mb-4">
         <input type="text" id="file-path" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., app/client/ui/CustomWidget.ts">
+        <p id="file-error" class="text-sm text-red-600 mt-1 hidden"></p>
         <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save</button>
       </div>
       <ul id="file-list" class="list-disc pl-5"></ul>
+      <button id="show-more" class="mt-2 text-blue-600 hover:underline hidden">Show More</button>
     </div>
 
     <!-- Upstream Check -->
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Check Upstream Changes</h2>
-      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Check Latest Release</button>
+      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
+        Check Latest Release <span id="check-spinner" class="spinner"></span>
+      </button>
       <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
+      <p id="upstream-error" class="text-sm text-red-600 mt-1 hidden"></p>
     </div>
 
     <!-- Results Table -->
-    <div id="results" class="hidden">
-      <h2 class="text-xl font-semibold mb-2">Results</h2>
+    <div id="results" class="hidden mb-6">
+      <h2 class="text-xl font-semibold mb-2">Customized Files Status</h2>
       <table class="w-full border-collapse border border-gray-300">
         <thead>
           <tr class="bg-gray-200">
             <th class="border border-gray-300 p-2">File</th>
-            <th class="border border-gray-300 p-2">Upstream days</th>
-            <th class="border border-gray-300 p-2">Custom days</th>
+            <th class="border border-gray-300 p-2">Upstream Days</th>
+            <th class="border border-gray-300 p-2">Custom Days</th>
             <th class="border border-gray-300 p-2">Details</th>
           </tr>
         </thead>
         <tbody id="results-body"></tbody>
       </table>
     </div>
+
+    <!-- Non-Customized Files -->
+    <div id="non-custom-files" class="hidden">
+      <h2 class="text-xl font-semibold mb-2">Non-Customized Modified Files</h2>
+      <table class="w-full border-collapse border border-gray-300">
+        <thead>
+          <tr class="bg-gray-200">
+            <th class="border border-gray-300 p-2">File</th>
+            <th class="border border-gray-300 p-2">Action</th>
+          </tr>
+        </thead>
+        <tbody id="non-custom-files-body"></tbody>
+      </table>
+    </div>
+
+    <!-- Rate Limit Info -->
+    <div class="mt-4 text-sm text-gray-600">
+      <p id="rate-limit-info"></p>
+    </div>
   </div>
 
   <script>
-    const GITHUB_API = 'https://api.github.com';
-    const OWNER = 'teebase-net';
-    const REPO = 'grist-core';
-    const BRANCH = 'custom-ui';
-    const UPSTREAM_OWNER = 'gristlabs';
-    const UPSTREAM_REPO = 'grist-core';
-    const FILE_PATH = 'custom-files.json';
-    const CURRENT_DATE = new Date('2025-06-19T15:09:00+10:00'); // Fixed to AEST
+    const API_BASE = '/api';
+    let files = [];
+    let visibleFiles = 10;
 
-    // Calculate days since a given date
-    function calculateDaysSince(date) {
-      if (!date) return Infinity;
-      const diffMs = CURRENT_DATE - new Date(date);
-      return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    // Show/hide loading spinner
+    function toggleSpinner(id, show) {
+      document.getElementById(id).style.display = show ? 'inline-block' : 'none';
     }
 
-    // Load token from localStorage
-    const tokenInput = document.getElementById('github-token');
-    tokenInput.value = localStorage.getItem('github-token') || '';
-    tokenInput.addEventListener('change', () => {
-      localStorage.setItem('github-token', tokenInput.value);
+    // Show error message
+    function showError(id, message) {
+      const errorEl = document.getElementById(id);
+      errorEl.textContent = message;
+      errorEl.classList.remove('hidden');
+      setTimeout(() => errorEl.classList.add('hidden'), 5000);
+    }
+
+    // Set token
+    document.getElementById('set-token').addEventListener('click', async () => {
+      const token = document.getElementById('github-token').value.trim();
+      if (!token) {
+        showError('token-error', 'Please enter a GitHub token.');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE}/set-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        if (!response.ok) throw new Error((await response.json()).error);
+        await loadFiles();
+      } catch (error) {
+        showError('token-error', `Error: ${error.message}`);
+      }
     });
 
-    // File management
-    let files = [];
-    const fileList = document.getElementById('file-list');
-    const fileForm = document.getElementById('file-form');
-    const filePathInput = document.getElementById('file-path');
-    const addFileBtn = document.getElementById('add-file');
-    const saveFileBtn = document.getElementById('save-file');
-
+    // Load files
     async function loadFiles() {
-      const token = tokenInput.value;
-      if (!token) {
-        alert('Please enter a GitHub Personal Access Token.');
-        return;
-      }
       try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const url = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`;
-        const response = await fetch(url, { headers });
-        if (response.status === 404) {
-          files = [];
-          await saveFiles(); // Create file if it doesn't exist
-        } else if (!response.ok) {
-          throw new Error('Failed to load custom-files.json');
-        } else {
-          const data = await response.json();
-          files = JSON.parse(atob(data.content));
-        }
+        toggleSpinner('detect-spinner', true);
+        const response = await fetch(`${API_BASE}/files`);
+        if (!response.ok) throw new Error((await response.json()).error);
+        files = (await response.json()).files;
         renderFileList();
       } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError('token-error', `Error: ${error.message}`);
+      } finally {
+        toggleSpinner('detect-spinner', false);
       }
     }
 
+    // Save files
     async function saveFiles() {
-      const token = tokenInput.value;
-      if (!token) {
-        alert('Please enter a GitHub Personal Access Token.');
-        return;
-      }
       try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        // Get current file SHA (if exists)
-        let sha = null;
-        const getUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`;
-        const getResponse = await fetch(getUrl, { headers });
-        if (getResponse.ok) {
-          const data = await getResponse.json();
-          sha = data.sha;
-        }
-        // Save file
-        const content = btoa(JSON.stringify(files, null, 2));
-        const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
-        const body = {
-          message: `Update ${FILE_PATH}`,
-          content,
-          branch: BRANCH,
-          sha
-        };
-        const putResponse = await fetch(putUrl, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(body)
+        const response = await fetch(`${API_BASE}/files`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files }),
         });
-        if (!putResponse.ok) throw new Error('Failed to save custom-files.json');
+        if (!response.ok) throw new Error((await response.json()).error);
       } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError('token-error', `Error: ${error.message}`);
       }
     }
 
+    // Render file list
     function renderFileList() {
+      const fileList = document.getElementById('file-list');
       fileList.innerHTML = '';
-      files.forEach((file, index) => {
+      const filesToShow = files.slice(0, visibleFiles);
+      filesToShow.forEach((file, index) => {
         const li = document.createElement('li');
         li.className = 'flex justify-between items-center';
         li.innerHTML = `
@@ -160,21 +180,36 @@
         `;
         fileList.appendChild(li);
       });
+      document.getElementById('show-more').classList.toggle('hidden', files.length <= visibleFiles);
     }
 
-    addFileBtn.addEventListener('click', () => {
-      fileForm.classList.toggle('hidden');
+    // Add file
+    document.getElementById('add-file').addEventListener('click', () => {
+      document.getElementById('file-form').classList.toggle('hidden');
     });
 
-    saveFileBtn.addEventListener('click', async () => {
-      const path = filePathInput.value.trim();
-      if (path && !files.includes(path)) {
+    document.getElementById('save-file').addEventListener('click', async () => {
+      const path = document.getElementById('file-path').value.trim();
+      if (!path) {
+        showError('file-error', 'File path cannot be empty.');
+        return;
+      }
+      if (!/\.(ts|js|py|css|html)$/.test(path)) {
+        showError('file-error', 'Please enter a valid code file path (e.g., .ts, .js, .py, .css, .html).');
+        return;
+      }
+      if (!files.includes(path)) {
         files.push(path);
         await saveFiles();
         renderFileList();
-        filePathInput.value = '';
-        fileForm.classList.add('hidden');
+        document.getElementById('file-path').value = '';
+        document.getElementById('file-form').classList.add('hidden');
       }
+    });
+
+    document.getElementById('show-more').addEventListener('click', () => {
+      visibleFiles += 10;
+      renderFileList();
     });
 
     window.removeFile = async (index) => {
@@ -185,114 +220,95 @@
 
     // Auto-detect files
     document.getElementById('detect-files').addEventListener('click', async () => {
-      const token = tokenInput.value;
-      if (!token) {
-        alert('Please enter a GitHub Personal Access Token.');
-        return;
-      }
       try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
-        const response = await fetch(compareUrl, { headers });
-        if (!response.ok) throw new Error('Failed to fetch comparison');
-        const data = await response.json();
-        const newFiles = data.files.map(f => f.filename);
+        toggleSpinner('detect-spinner', true);
+        const response = await fetch(`${API_BASE}/detect-files`);
+        if (!response.ok) throw new Error((await response.json()).error);
+        const newFiles = (await response.json()).files;
         files = [...new Set([...files, ...newFiles])];
         await saveFiles();
         renderFileList();
       } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError('token-error', `Error: ${error.message}`);
+      } finally {
+        toggleSpinner('detect-spinner', false);
       }
     });
 
     // Check upstream changes
     document.getElementById('check-upstream').addEventListener('click', async () => {
-      const token = tokenInput.value;
-      if (!token) {
-        alert('Please enter a GitHub Personal Access Token.');
-        return;
-      }
-      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-      const resultsBody = document.getElementById('results-body');
-      const latestTagEl = document.getElementById('latest-tag');
-      resultsBody.innerHTML = '';
-      document.getElementById('results').classList.remove('hidden');
-
       try {
-        // Get latest upstream release tag
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags`;
-        const tagsResponse = await fetch(tagsUrl, { headers });
-        if (!tagsResponse.ok) throw new Error('Failed to fetch tags');
-        const tags = await tagsResponse.json();
-        const latestTag = tags[0].name;
-        latestTagEl.textContent = `Latest upstream release: ${latestTag}`;
+        toggleSpinner('check-spinner', true);
+        const response = await fetch(`${API_BASE}/check-upstream`);
+        if (!response.ok) throw new Error((await response.json()).error);
+        const { latestTag, results, nonCustomFiles, rateLimit } = await response.json();
+        document.getElementById('latest-tag').textContent = `Latest upstream release: ${latestTag}`;
+        document.getElementById('rate-limit-info').textContent = `GitHub API Rate Limit: ${rateLimit}`;
+        document.getElementById('results').classList.remove('hidden');
 
-        // Check each file
-        for (const file of files) {
-          // Check for content changes
-          const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?paths=${encodeURIComponent(file)}`;
-          const compareResponse = await fetch(compareUrl, { headers });
-          if (!compareResponse.ok) throw new Error(`Failed to check ${file}`);
-          const compareData = await compareResponse.json();
-          const hasContentChanges = compareData.files.length > 0;
-
-          // Get last commit dates
-          let customDate = null;
-          let upstreamDate = null;
-
-          // Custom-ui branch commit date
-          const customCommitsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/commits?path=${encodeURIComponent(file)}&sha=${BRANCH}&per_page=1`;
-          const customCommitsResponse = await fetch(customCommitsUrl, { headers });
-          if (customCommitsResponse.ok) {
-            const customCommits = await customCommitsResponse.json();
-            if (customCommits.length > 0) {
-              customDate = new Date(customCommits[0].commit.author.date);
-            }
-          }
-
-          // Upstream latest tag commit date
-          const upstreamCommitsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits?path=${encodeURIComponent(file)}&sha=${latestTag}&per_page=1`;
-          const upstreamCommitsResponse = await fetch(upstreamCommitsUrl, { headers });
-          if (upstreamCommitsResponse.ok) {
-            const upstreamCommits = await upstreamCommitsResponse.json();
-            if (upstreamCommits.length > 0) {
-              upstreamDate = new Date(upstreamCommits[0].commit.author.date);
-            }
-          }
-
-          // Calculate days
-          const customDays = customDate ? calculateDaysSince(customDate) : 0; // New file in custom-ui
-          const upstreamDays = upstreamDate ? calculateDaysSince(upstreamDate) : Infinity; // No upstream history
-
-          // Determine row color
-          let rowColor = '';
-          if (customDays > upstreamDays) {
-            rowColor = 'bg-red-100'; // Custom-ui is older
-          } else if (upstreamDays > customDays) {
-            rowColor = 'bg-green-100'; // Upstream is older
-          }
-
+        // Render customized files
+        const resultsBody = document.getElementById('results-body');
+        resultsBody.innerHTML = '';
+        results.forEach(({ file, customDays, upstreamDays, hasContentChanges }) => {
+          const rowColor = customDays > upstreamDays ? 'bg-red-100' : upstreamDays > customDays ? 'bg-green-100' : '';
           const details = hasContentChanges
-            ? `<a href="https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff</a>`
-            : 'No action needed';
-
+            ? `<a href="https://github.com/gristlabs/grist-core/compare/${latestTag}...teebase-net:custom-ui?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff</a>`
+            : 'No changes detected';
           const row = document.createElement('tr');
           row.className = rowColor;
           row.innerHTML = `
             <td class="border border-gray-300 p-2">${file}</td>
-            <td class="border border-gray-300 p-2">${upstreamDays === Infinity ? 'N/A' : upstreamDays}</td>
+            <td class="border border-gray-300 p-2">${upstreamDays === Infinity ? 'Not in upstream' : upstreamDays}</td>
             <td class="border border-gray-300 p-2">${customDays === 0 ? 'New' : customDays}</td>
             <td class="border border-gray-300 p-2">${details}</td>
           `;
           resultsBody.appendChild(row);
+        });
+
+        // Render non-customized files
+        const nonCustomBody = document.getElementById('non-custom-files-body');
+        nonCustomBody.innerHTML = '';
+        if (nonCustomFiles.length) {
+          document.getElementById('non-custom-files').classList.remove('hidden');
+          nonCustomFiles.forEach(file => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td class="border border-gray-300 p-2">${file}</td>
+              <td class="border border-gray-300 p-2">
+                <button onclick="updateFile('${file}')" class="bg-yellow-600 text-white px-4 py-1 rounded-md hover:bg-yellow-700">Update</button>
+              </td>
+            `;
+            nonCustomBody.appendChild(row);
+          });
+        } else {
+          document.getElementById('non-custom-files').classList.add('hidden');
         }
       } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError('upstream-error', `Error: ${error.message}`);
+      } finally {
+        toggleSpinner('check-spinner', false);
       }
     });
 
-    // Initial load
-    loadFiles();
+    // Update non-customized file
+    window.updateFile = async (file) => {
+      try {
+        toggleSpinner('check-spinner', true);
+        const response = await fetch(`${API_BASE}/update-file`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file }),
+        });
+        if (!response.ok) throw new Error((await response.json()).error);
+        showError('upstream-error', `Successfully updated ${file}`);
+        // Refresh results
+        document.getElementById('check-upstream').click();
+      } catch (error) {
+        showError('upstream-error', `Error: ${error.message}. Resolve conflicts manually on GitHub.`);
+      } finally {
+        toggleSpinner('check-spinner', false);
+      }
+    };
   </script>
 </body>
 </html>
