@@ -56,6 +56,10 @@
     .info-message button {
       color: #0284c7;
     }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
   </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -116,7 +120,7 @@
 
     <!-- Upstream Check -->
     <div class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Check Upstream Changes</h2>
+      <h2 class="text-xl font-semibold mb-2">Check Customized Files</h2>
       <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
         Check Customized Files <span id="check-spinner" class="spinner"></span>
       </button>
@@ -337,7 +341,7 @@
     function showError(id, message) {
       logDebug(`Error: ${message}`);
       const errorEl = document.getElementById(id);
-      errorEl.querySelector('span').textContent = message;
+      errorEl.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
       errorEl.classList.remove('hidden');
     }
 
@@ -345,7 +349,7 @@
     function showSuccess(id, message) {
       logDebug(`Success: ${message}`);
       const successEl = document.getElementById(id);
-      successEl.querySelector('span').textContent = message;
+      successEl.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
       successEl.classList.remove('hidden');
     }
 
@@ -353,7 +357,7 @@
     function showInfo(id, message) {
       logDebug(`Info: ${message}`);
       const infoEl = document.getElementById(id);
-      infoEl.querySelector('span').textContent = message;
+      infoEl.querySelector('span').innerHTML = `<pre>${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
       infoEl.classList.remove('hidden');
     }
 
@@ -467,8 +471,32 @@
           throw new Error(`Failed to load custom-files.json: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
         } else {
           const data = await response.json();
-          files = JSON.parse(atob(data.content));
-          logDebug(`Loaded ${files.length} files from custom-files.json: ${files.join(', ')}`);
+          let content = atob(data.content);
+          logDebug(`Raw custom-files.json content: ${content}`);
+          try {
+            files = JSON.parse(content);
+          } catch (error) {
+            logDebug(`JSON parsing error: ${error.message}`);
+            // Attempt to fix common JSON issues (e.g., trailing comma)
+            try {
+              content = content.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}');
+              files = JSON.parse(content);
+              logDebug('Fixed and parsed custom-files.json');
+              await saveFiles(); // Save corrected JSON
+            } catch (fixError) {
+              showError('token-error', `custom-files.json is malformed and cannot be fixed automatically. Please edit it in teebase-net/grist-core:custom-ui on GitHub or run:\n` +
+                `git clone https://github.com/teebase-net/grist-core.git\n` +
+                `cd grist-core\n` +
+                `git checkout custom-ui\n` +
+                `# Edit custom-files.json to fix JSON (e.g., remove trailing comma)\n` +
+                `git add custom-files.json\n` +
+                `git commit -m "Fix malformed custom-files.json"\n` +
+                `git push origin custom-ui`);
+              files = [];
+              await saveFiles(); // Reset to empty array
+            }
+          }
+          logDebug(`Loaded ${files.length} files from custom-files.json: ${files.join(', ') || 'none'}`);
         }
         renderFileList();
       } catch (error) {
@@ -550,8 +578,8 @@
         showError('file-error', 'File path cannot be empty.');
         return;
       }
-      if (!/\.(ts|tsx|js|jsx|py|css|html)$/.test(path)) {
-        showError('file-error', 'Please enter a valid code file path (e.g., .ts, .tsx, .js, .jsx, .py, .css, .html).');
+      if (!/\.(ts|tsx|js|jsx|py|css|html|json)$/.test(path)) {
+        showError('file-error', 'Please enter a valid code file path (e.g., .ts, .tsx, .js, .jsx, .py, .css, .html, .json).');
         return;
       }
       if (!files.includes(path)) {
@@ -600,7 +628,7 @@
         const newFiles = data.files
           ? data.files
               .map(f => f.filename)
-              .filter(f => !/\.(md|txt|doc|json)$/.test(f))
+              .filter(f => /\.(ts|tsx|js|jsx|py|css|html|json)$/.test(f))
           : [];
         files = [...new Set([...files, ...newFiles])];
         logDebug(`Detected ${newFiles.length} new files: ${newFiles.join(', ') || 'none'}`);
@@ -666,7 +694,7 @@
           }
           const data = await response.json();
           const files = data.tree
-            .filter(item => item.type === 'blob' && /\.(ts|tsx|js|jsx|py|css|html)$/.test(item.path))
+            .filter(item => item.type === 'blob' && (/\.(ts|tsx|js|jsx|py|css|html)$/.test(item.path) || item.path === 'package.json'))
             .map(item => item.path);
           logDebug(`Found ${files.length} files in ${owner}/${repo}:${branch}: ${files.join(', ') || 'none'}`);
           return files;
@@ -784,15 +812,13 @@
         logDebug(`teebase-net/grist-core:main is ${isBehind ? 'behind' : 'up to date'} with ${compareData.behind_by} commits`);
 
         if (isBehind) {
-          const syncCommands = `
-            git clone https://github.com/teebase-net/grist-core.git
-            cd grist-core
-            git remote add upstream https://github.com/gristlabs/grist-core.git
-            git fetch upstream
-            git checkout main
-            git merge upstream/main
-            git push origin main
-          `;
+          const syncCommands = `git clone https://github.com/teebase-net/grist-core.git
+cd grist-core
+git remote add upstream https://github.com/gristlabs/grist-core.git
+git fetch upstream
+git checkout main
+git merge upstream/main
+git push origin main`;
           showInfo('sync-message', `Version upgrade detected (latest upstream: ${latestUpstreamTag}). Please sync teebase-net/grist-core:main by running:\n${syncCommands}`);
           logDebug(`Prompting manual sync due to version upgrade`);
           return;
@@ -806,9 +832,11 @@
         const filesToCopy = upstreamFiles.filter(f => !files.includes(f));
         logDebug(`Filtered ${filesToCopy.length} files to copy to custom-ui: ${filesToCopy.join(', ') || 'none'}`);
         logDebug(`Skipped ${files.length} customized files: ${files.join(', ') || 'none'}`);
+        logDebug(`package.json ${files.includes('package.json') ? 'skipped (in custom-files.json)' : 'will be copied'}`);
+        logDebug(`server.js ${files.includes('server.js') ? 'skipped (in custom-files.json)' : 'will be copied'}`);
 
         if (filesToCopy.length === 0) {
-          showInfo('sync-message', 'No non-customized files to copy to custom-ui. All code files are listed in custom-files.json.');
+          showInfo('sync-message', 'No non-customized files to copy to custom-ui. All code files are listed in custom-files.json or no code files found.');
           return;
         }
 
