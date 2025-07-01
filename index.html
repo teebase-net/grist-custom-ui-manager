@@ -21,7 +21,7 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-    .error-message, .success-message {
+    .error-message, .success-message, .info-message {
       position: relative;
       padding: 8px 16px;
       border-radius: 4px;
@@ -35,7 +35,11 @@
       background-color: #d1fae5;
       border: 1px solid #10b981;
     }
-    .error-message button, .success-message button {
+    .info-message {
+      background-color: #e0f2fe;
+      border: 1px solid #0284c7;
+    }
+    .error-message button, .success-message button, .info-message button {
       position: absolute;
       top: 8px;
       right: 8px;
@@ -48,6 +52,9 @@
     }
     .success-message button {
       color: #10b981;
+    }
+    .info-message button {
+      color: #0284c7;
     }
   </style>
 </head>
@@ -72,7 +79,7 @@
         </select>
         <span id="base-version-spinner" class="spinner"></span>
       </div>
-      <p class="text-sm text-gray-500 mt-1">Select the latest tag from gristlabs/grist-core that custom-ui is synced with.</p>
+      <p class="text-sm text-gray-500 mt-1">Select the latest tag from gristlabs/grist-core that custom-ui is synced with for diff comparisons.</p>
       <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
         Set Token & Version <span id="token-spinner" class="spinner"></span>
       </button>
@@ -111,7 +118,7 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Check Upstream Changes</h2>
       <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
-        Check Latest Changes <span id="check-spinner" class="spinner"></span>
+        Check Customized Files <span id="check-spinner" class="spinner"></span>
       </button>
       <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
       <div id="upstream-error" class="error-message hidden">
@@ -135,23 +142,24 @@
       </table>
     </div>
 
-    <!-- Upstream Updates (not customized in custom-ui) -->
+    <!-- Sync and Update custom-ui -->
     <div id="upstream-updates" class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Upstream Updates (not customized in custom-ui)</h2>
-      <button id="batch-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
-        Batch Update Selected <span id="batch-spinner" class="spinner"></span>
+      <h2 class="text-xl font-semibold mb-2">Sync and Update custom-ui</h2>
+      <button id="sync-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
+        Sync main and Update custom-ui <span id="sync-spinner" class="spinner"></span>
       </button>
-      <table class="w-full border-collapse border border-gray-300">
-        <thead>
-          <tr class="bg-gray-200">
-            <th class="border border-gray-300 p-2">File</th>
-            <th class="border border-gray-300 p-2">Upstream Version</th>
-            <th class="border border-gray-300 p-2">Update</th>
-          </tr>
-        </thead>
-        <tbody id="upstream-updates-body"></tbody>
-      </table>
-      <p id="no-updates" class="text-sm text-gray-600 mt-2 hidden">No non-customized files with updates available.</p>
+      <div id="sync-message" class="info-message hidden">
+        <span></span>
+        <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+      </div>
+      <div id="sync-error" class="error-message hidden">
+        <span></span>
+        <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+      </div>
+      <div id="sync-success" class="success-message hidden">
+        <span></span>
+        <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+      </div>
     </div>
 
     <!-- Rate Limit Info -->
@@ -171,7 +179,6 @@
     let files = [];
     let visibleFiles = 10;
     let baseVersion = '';
-    let filteredNonCustomFiles = [];
 
     // Debug logging
     function logDebug(message) {
@@ -180,21 +187,35 @@
 
     // Compare version tags
     function isVersionNewer(tag, base) {
-      if (!base) return true;
-      if (tag === 'main') return true; // Treat main as newer than any tag
+      logDebug(`Comparing tag=${tag} to base=${base}`);
+      if (!base) {
+        logDebug(`No base version, assuming ${tag} is newer`);
+        return true;
+      }
+      if (tag === 'main') {
+        logDebug(`Tag is main, assuming newer than base ${base}`);
+        return true;
+      }
       try {
         const tagParts = tag.replace(/^v/, '').split('.').map(Number);
         const baseParts = base.replace(/^v/, '').split('.').map(Number);
         for (let i = 0; i < Math.max(tagParts.length, baseParts.length); i++) {
           const tagNum = tagParts[i] || 0;
           const baseNum = baseParts[i] || 0;
-          if (tagNum > baseNum) return true;
-          if (tagNum < baseNum) return false;
+          if (tagNum > baseNum) {
+            logDebug(`Version ${tag} > ${base} at position ${i}: ${tagNum} > ${baseNum}`);
+            return true;
+          }
+          if (tagNum < baseNum) {
+            logDebug(`Version ${tag} <= ${base} at position ${i}: ${tagNum} < ${baseNum}`);
+            return false;
+          }
         }
+        logDebug(`Version ${tag} equals ${base}`);
         return false;
-      } catch {
-        logDebug(`Version comparison failed: tag=${tag}, base=${base}`);
-        return true; // Fallback to assuming newer if parsing fails
+      } catch (error) {
+        logDebug(`Version comparison failed for tag=${tag}, base=${base}: ${error.message}`);
+        return true; // Fallback to assuming newer
       }
     }
 
@@ -328,16 +349,24 @@
       successEl.classList.remove('hidden');
     }
 
+    // Show info message
+    function showInfo(id, message) {
+      logDebug(`Info: ${message}`);
+      const infoEl = document.getElementById(id);
+      infoEl.querySelector('span').textContent = message;
+      infoEl.classList.remove('hidden');
+    }
+
     // Check rate limit
     async function checkRateLimit(headers) {
       try {
         const response = await fetch(`${GITHUB_API}/rate_limit`, { headers });
         if (response.ok) {
           const data = await response.json();
-          const { remaining, limit } = data.rate;
+          const { remaining, limit } = data.resources.core;
           document.getElementById('rate-limit-info').textContent = `GitHub API Rate Limit: ${remaining}/${limit} requests remaining`;
           if (remaining === 0) {
-            showError('upstream-error', 'GitHub API rate limit exceeded. Try again later.');
+            showError('sync-error', 'GitHub API rate limit exceeded. Try again later.');
             return false;
           }
           logDebug(`Rate limit: ${remaining}/${limit} remaining`);
@@ -345,7 +374,7 @@
         }
         throw new Error(`Failed to check rate limit: ${response.status} ${response.statusText}`);
       } catch (error) {
-        showError('upstream-error', `Rate limit check failed: ${error.message}`);
+        showError('sync-error', `Rate limit check failed: ${error.message}`);
         return false;
       }
     }
@@ -439,7 +468,7 @@
         } else {
           const data = await response.json();
           files = JSON.parse(atob(data.content));
-          logDebug(`Loaded ${files.length} files from custom-files.json`);
+          logDebug(`Loaded ${files.length} files from custom-files.json: ${files.join(', ')}`);
         }
         renderFileList();
       } catch (error) {
@@ -574,7 +603,7 @@
               .filter(f => !/\.(md|txt|doc|json)$/.test(f))
           : [];
         files = [...new Set([...files, ...newFiles])];
-        logDebug(`Detected ${newFiles.length} new files: ${newFiles.join(', ')}`);
+        logDebug(`Detected ${newFiles.length} new files: ${newFiles.join(', ') || 'none'}`);
         await saveFiles();
         renderFileList();
       } catch (error) {
@@ -624,33 +653,40 @@
     }
 
     // Get files from repository tree
-    async function getRepoFiles(token, owner, repo, branch, path = '') {
+    async function getRepoFiles(token, owner, repo, branch, retries = 3) {
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       const treeUrl = `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
       logDebug(`Fetching file tree: ${treeUrl}`);
-      try {
-        const response = await fetch(treeUrl, { headers });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tree: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const response = await fetch(treeUrl, { headers });
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`Failed to fetch tree (attempt ${attempt}): ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
+          }
+          const data = await response.json();
+          const files = data.tree
+            .filter(item => item.type === 'blob' && /\.(ts|tsx|js|jsx|py|css|html)$/.test(item.path))
+            .map(item => item.path);
+          logDebug(`Found ${files.length} files in ${owner}/${repo}:${branch}: ${files.join(', ') || 'none'}`);
+          return files;
+        } catch (error) {
+          logDebug(`File tree fetch error (attempt ${attempt}): ${error.message}`);
+          if (attempt === retries) {
+            showError('sync-error', `Failed to fetch file tree after ${retries} attempts: ${error.message}`);
+            return [];
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         }
-        const data = await response.json();
-        const files = data.tree
-          .filter(item => item.type === 'blob' && /\.(ts|tsx|js|jsx|py|css|html)$/.test(item.path))
-          .map(item => item.path);
-        logDebug(`Found ${files.length} files in ${owner}/${repo}:${branch}: ${files.join(', ')}`);
-        return files;
-      } catch (error) {
-        logDebug(`Error fetching file tree: ${error.message}`);
-        return [];
       }
     }
 
-    // Check upstream changes
+    // Check upstream changes for customized files
     document.getElementById('check-upstream').addEventListener('click', async () => {
+      logDebug('Clicked Check Customized Files');
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
+        showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
         return;
       }
       if (!baseVersion) {
@@ -658,25 +694,14 @@
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
-      if (!(await checkBranch(token, OWNER, REPO, 'main'))) {
-        showError('upstream-error', 'Main branch not found in teebase-net/grist-core. Please ensure it exists.');
-        return;
-      }
       toggleSpinner('check-spinner', true);
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       const resultsBody = document.getElementById('results-body');
-      const upstreamUpdatesBody = document.getElementById('upstream-updates-body');
-      const latestTagEl = document.getElementById('latest-tag');
-      const noUpdatesEl = document.getElementById('no-updates');
       resultsBody.innerHTML = '';
-      upstreamUpdatesBody.innerHTML = '';
-      noUpdatesEl.classList.add('hidden');
       document.getElementById('results').classList.remove('hidden');
-      document.getElementById('upstream-updates').classList.remove('hidden');
 
       try {
         if (!(await checkRateLimit(headers))) return;
-        // Get latest upstream tags
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
         logDebug(`Fetching tags: ${tagsUrl}`);
         const tagsResponse = await fetch(tagsUrl, { headers });
@@ -687,50 +712,9 @@
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
         const latestTag = sortTags(tags)[0].name;
-        latestTagEl.textContent = `Latest upstream release: ${latestTag}`;
+        document.getElementById('latest-tag').textContent = `Latest upstream release: ${latestTag}`;
         logDebug(`Latest upstream tag: ${latestTag}`);
 
-        // Get non-customized files from teebase-net/grist-core:main
-        const nonCustomFiles = await getRepoFiles(token, OWNER, REPO, 'main');
-        logDebug(`Found ${nonCustomFiles.length} files in teebase-net/grist-core:main: ${nonCustomFiles.join(', ') || 'none'}`);
-        const filteredNonCustom = nonCustomFiles.filter(f => !files.includes(f));
-        logDebug(`Filtered ${filteredNonCustom.length} non-customized files: ${filteredNonCustom.join(', ') || 'none'}`);
-
-        // Filter non-customized files by version
-        filteredNonCustomFiles = [];
-        for (const file of filteredNonCustom) {
-          logDebug(`Checking upstream version for non-customized file: ${file}`);
-          const latestTagForFile = await findLatestTagForFile(file, headers, tags);
-          if (isVersionNewer(latestTagForFile, baseVersion)) {
-            filteredNonCustomFiles.push({ file, latestTag: latestTagForFile });
-            logDebug(`Non-customized file ${file} has newer version ${latestTagForFile}`);
-          } else {
-            logDebug(`Non-customized file ${file} version ${latestTagForFile} is not newer than base ${baseVersion}`);
-          }
-        }
-        logDebug(`Filtered ${filteredNonCustomFiles.length} non-customized files needing update`);
-
-        // Render non-customized files
-        if (filteredNonCustomFiles.length > 0) {
-          filteredNonCustomFiles.forEach(({ file, latestTag }, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-              <td class="border border-gray-300 p-2">${file}</td>
-              <td class="border border-gray-300 p-2">${latestTag}</td>
-              <td class="border border-gray-300 p-2">
-                <input type="checkbox" id="update-noncustom-${index}" checked>
-              </td>
-            `;
-            upstreamUpdatesBody.appendChild(row);
-          });
-        } else {
-          noUpdatesEl.textContent = filteredNonCustom.length > 0
-            ? 'No non-customized files in teebase-net/grist-core:main have updates newer than the Base Version.'
-            : 'No code files found in teebase-net/grist-core:main.';
-          noUpdatesEl.classList.remove('hidden');
-        }
-
-        // Check each customized file
         for (const file of files) {
           logDebug(`Checking upstream version for customized file: ${file}`);
           const latestTagForFile = await findLatestTagForFile(file, headers, tags);
@@ -750,48 +734,90 @@
           resultsBody.appendChild(row);
         }
       } catch (error) {
-        showError('upstream-error', `Error checking upstream: ${error.message}`);
-        noUpdatesEl.textContent = 'Unable to check for updates. Check console for details.';
-        noUpdatesEl.classList.remove('hidden');
+        showError('upstream-error', `Error checking customized files: ${error.message}`);
       } finally {
         toggleSpinner('check-spinner', false);
       }
     });
 
-    // Batch update selected files
-    document.getElementById('batch-update').addEventListener('click', async () => {
+    // Check version and update custom-ui
+    document.getElementById('sync-update').addEventListener('click', async () => {
+      logDebug('Clicked Sync main and Update custom-ui');
       const token = tokenInput.value;
       if (!token) {
-        showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
-        return;
-      }
-      if (!baseVersion) {
-        showError('upstream-error', 'Please select a Base Version and click Set Token & Version.');
+        showError('sync-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
         return;
       }
       if (!(await checkRepoAndBranch(token))) return;
-      toggleSpinner('batch-spinner', true);
-      toggleButton('batch-update', true);
+      if (!(await checkBranch(token, OWNER, REPO, 'main'))) {
+        showError('sync-error', 'Main branch not found in teebase-net/grist-core. Please create it.');
+        return;
+      }
+      toggleSpinner('sync-spinner', true);
+      toggleButton('sync-update', true);
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       try {
         if (!(await checkRateLimit(headers))) return;
-        const checkboxes = document.querySelectorAll('#upstream-updates-body input[type="checkbox"]');
-        const selectedFiles = [];
-        checkboxes.forEach((checkbox, index) => {
-          if (checkbox.checked) {
-            selectedFiles.push(filteredNonCustomFiles[index].file);
-          }
-        });
-        logDebug(`Batch updating ${selectedFiles.length} files: ${selectedFiles.join(', ')}`);
-        if (selectedFiles.length === 0) {
-          showError('upstream-error', 'No files selected for batch update.');
+
+        // Check for version upgrade
+        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=1`;
+        logDebug(`Fetching latest upstream tag: ${tagsUrl}`);
+        const tagsResponse = await fetch(tagsUrl, { headers });
+        if (!tagsResponse.ok) {
+          const errorData = await tagsResponse.json().catch(() => ({}));
+          throw new Error(`Failed to fetch upstream tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        const tags = await tagsResponse.json();
+        if (tags.length === 0) throw new Error('No upstream tags found');
+        const latestUpstreamTag = tags[0].name;
+        logDebug(`Latest upstream tag: ${latestUpstreamTag}`);
+
+        const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${REPO}:main`;
+        logDebug(`Checking version difference: ${compareUrl}`);
+        const compareResponse = await fetch(compareUrl, { headers });
+        if (!compareResponse.ok) {
+          const errorData = await compareResponse.json().catch(() => ({}));
+          throw new Error(`Failed to compare branches: ${compareResponse.status} ${compareResponse.statusText} - ${errorData.message || 'Unknown error'}`);
+        }
+        const compareData = await compareResponse.json();
+        const isBehind = compareData.behind_by > 0;
+        logDebug(`teebase-net/grist-core:main is ${isBehind ? 'behind' : 'up to date'} with ${compareData.behind_by} commits`);
+
+        if (isBehind) {
+          const syncCommands = `
+            git clone https://github.com/teebase-net/grist-core.git
+            cd grist-core
+            git remote add upstream https://github.com/gristlabs/grist-core.git
+            git fetch upstream
+            git checkout main
+            git merge upstream/main
+            git push origin main
+          `;
+          showInfo('sync-message', `Version upgrade detected (latest upstream: ${latestUpstreamTag}). Please sync teebase-net/grist-core:main by running:\n${syncCommands}`);
+          logDebug(`Prompting manual sync due to version upgrade`);
           return;
         }
-        for (const file of selectedFiles) {
-          logDebug(`Processing batch update for ${file}`);
+
+        // Fetch files from gristlabs/grist-core:main
+        const upstreamFiles = await getRepoFiles(token, UPSTREAM_OWNER, UPSTREAM_REPO, 'main');
+        if (upstreamFiles.length === 0) {
+          throw new Error('No code files found in gristlabs/grist-core:main');
+        }
+        const filesToCopy = upstreamFiles.filter(f => !files.includes(f));
+        logDebug(`Filtered ${filesToCopy.length} files to copy to custom-ui: ${filesToCopy.join(', ') || 'none'}`);
+        logDebug(`Skipped ${files.length} customized files: ${files.join(', ') || 'none'}`);
+
+        if (filesToCopy.length === 0) {
+          showInfo('sync-message', 'No non-customized files to copy to custom-ui. All code files are listed in custom-files.json.');
+          return;
+        }
+
+        // Copy files to custom-ui
+        let copiedCount = 0;
+        for (const file of filesToCopy) {
+          logDebug(`Processing copy of ${file} to custom-ui`);
           let content = '';
           let sha = null;
-          // Get upstream file content
           try {
             const upstreamUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/contents/${file}?ref=main`;
             logDebug(`Fetching upstream content for ${file}: ${upstreamUrl}`);
@@ -809,10 +835,10 @@
               content = atob(upstreamData.content);
             }
           } catch (error) {
-            showError('upstream-error', `Failed to fetch content for ${file}: ${error.message}`);
+            showError('sync-error', `Failed to fetch content for ${file}: ${error.message}`);
             throw error;
           }
-          // Get current file SHA in custom-ui
+
           try {
             const customUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=${BRANCH}`;
             logDebug(`Fetching SHA for ${file} in custom-ui: ${customUrl}`);
@@ -828,7 +854,7 @@
               throw error;
             }
           }
-          // Update file in custom-ui
+
           const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
           const body = {
             message: `Update ${file} from upstream main to custom-ui`,
@@ -836,7 +862,7 @@
             branch: BRANCH,
             sha
           };
-          logDebug(`Updating ${file}: ${putUrl}`);
+          logDebug(`Copying ${file} to custom-ui: ${putUrl}`);
           const putResponse = await fetch(putUrl, {
             method: 'PUT',
             headers,
@@ -846,15 +872,15 @@
             const errorData = await putResponse.json().catch(() => ({}));
             throw new Error(`Failed to update ${file}: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
           }
-          showSuccess('upstream-error', `Successfully updated ${file} in custom-ui`);
+          copiedCount++;
+          logDebug(`Successfully copied ${file} to custom-ui`);
         }
-        showSuccess('upstream-error', `Successfully updated ${selectedFiles.length} files in custom-ui`);
-        document.getElementById('check-upstream').click();
+        showSuccess('sync-success', `Successfully copied ${copiedCount} files to custom-ui, skipped ${files.length} customized files`);
       } catch (error) {
-        showError('upstream-error', `Error during batch update: ${error.message}. Resolve conflicts manually on GitHub.`);
+        showError('sync-error', `Error during sync and update: ${error.message}. Resolve conflicts manually on GitHub.`);
       } finally {
-        toggleSpinner('batch-spinner', false);
-        toggleButton('batch-update', false);
+        toggleSpinner('sync-spinner', false);
+        toggleButton('sync-update', false);
       }
     });
 
