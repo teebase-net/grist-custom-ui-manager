@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grist Custom-UI Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
   <style>
     .spinner {
       display: none;
@@ -20,20 +21,46 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .error-message {
+      position: relative;
+      padding: 8px 16px;
+      background-color: #fee2e2;
+      border: 1px solid #ef4444;
+      border-radius: 4px;
+      margin-top: 8px;
+    }
+    .error-message button {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+    }
   </style>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
 </head>
 <body class="bg-gray-100 font-sans">
   <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
     <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and update from <code>gristlabs/grist-core</code>.</p>
+    <div id="init-error" class="error-message hidden">
+      <span>Failed to initialize app. Check console for details.</span>
+      <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+    </div>
 
     <!-- GitHub Token Input -->
     <div class="mb-6">
       <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
       <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser (use caution: avoid sharing your token).</p>
-      <p id="token-error" class="text-sm text-red-600 mt-1 hidden"></p>
+      <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
+        Set Token <span id="token-spinner" class="spinner"></span>
+      </button>
+      <div id="token-error" class="error-message hidden">
+        <span></span>
+        <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+      </div>
     </div>
 
     <!-- File Management -->
@@ -47,7 +74,10 @@
       </div>
       <div id="file-form" class="hidden mb-4">
         <input type="text" id="file-path" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., app/client/ui/CustomWidget.ts">
-        <p id="file-error" class="text-sm text-red-600 mt-1 hidden"></p>
+        <div id="file-error" class="error-message hidden">
+          <span></span>
+          <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+        </div>
         <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save</button>
       </div>
       <ul id="file-list" class="list-disc pl-5"></ul>
@@ -61,7 +91,10 @@
         Check Latest Release <span id="check-spinner" class="spinner"></span>
       </button>
       <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
-      <p id="upstream-error" class="text-sm text-red-600 mt-1 hidden"></p>
+      <div id="upstream-error" class="error-message hidden">
+        <span></span>
+        <button onclick="this.parentElement.classList.add('hidden')">✕</button>
+      </div>
     </div>
 
     <!-- Results Table -->
@@ -113,7 +146,7 @@
 
     // Debug logging
     function logDebug(message) {
-      console.log(`[Grist Custom-UI Manager] ${message}`);
+      console.log(`[Grist Custom-UI Manager @ ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' })}] ${message}`);
     }
 
     // Calculate days since a given date
@@ -134,9 +167,8 @@
     function showError(id, message) {
       logDebug(`Error: ${message}`);
       const errorEl = document.getElementById(id);
-      errorEl.textContent = message;
+      errorEl.querySelector('span').textContent = message;
       errorEl.classList.remove('hidden');
-      setTimeout(() => errorEl.classList.add('hidden'), 5000);
     }
 
     // Check rate limit
@@ -151,11 +183,27 @@
             showError('upstream-error', 'GitHub API rate limit exceeded. Try again later.');
             return false;
           }
+          logDebug(`Rate limit: ${remaining}/${limit} remaining`);
           return true;
         }
-        throw new Error('Failed to check rate limit');
+        throw new Error(`Failed to check rate limit: ${response.statusText}`);
       } catch (error) {
         showError('upstream-error', `Rate limit check failed: ${error.message}`);
+        return false;
+      }
+    }
+
+    // Check repository and branch
+    async function checkRepoAndBranch(token) {
+      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+      try {
+        const branchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/${BRANCH}`;
+        logDebug(`Checking repo and branch: ${branchUrl}`);
+        const response = await fetch(branchUrl, { headers });
+        if (!response.ok) throw new Error(`Custom-ui branch not found in ${OWNER}/${REPO}: ${response.statusText}`);
+        return true;
+      } catch (error) {
+        showError('token-error', `Error: ${error.message}`);
         return false;
       }
     }
@@ -163,16 +211,30 @@
     // Load token from localStorage
     const tokenInput = document.getElementById('github-token');
     tokenInput.value = localStorage.getItem('github-token') || '';
-    tokenInput.addEventListener('change', () => {
+    tokenInput.addEventListener('input', () => {
       localStorage.setItem('github-token', tokenInput.value);
       logDebug('Token updated in localStorage');
+    });
+
+    // Set token explicitly
+    document.getElementById('set-token').addEventListener('click', async () => {
+      const token = tokenInput.value.trim();
+      if (!token) {
+        showError('token-error', 'Please enter a GitHub Personal Access Token.');
+        return;
+      }
+      toggleSpinner('token-spinner', true);
+      if (await checkRepoAndBranch(token)) {
+        await loadFiles();
+      }
+      toggleSpinner('token-spinner', false);
     });
 
     // Load files
     async function loadFiles() {
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token.');
+        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
         return;
       }
       toggleSpinner('detect-spinner', true);
@@ -186,7 +248,7 @@
           files = [];
           await saveFiles();
         } else if (!response.ok) {
-          throw new Error(`Failed to load custom-files.json: ${response.statusText}`);
+          throw new Error(`Failed to load custom-files.json: ${response.status} ${response.statusText}`);
         } else {
           const data = await response.json();
           files = JSON.parse(atob(data.content));
@@ -194,7 +256,8 @@
         }
         renderFileList();
       } catch (error) {
-        showError('token-error', `Error: ${error.message}`);
+        showError('token-error', `Error loading files: ${error.message}`);
+        document.getElementById('init-error').classList.remove('hidden');
       } finally {
         toggleSpinner('detect-spinner', false);
       }
@@ -232,10 +295,10 @@
           headers,
           body: JSON.stringify(body)
         });
-        if (!putResponse.ok) throw new Error(`Failed to save custom-files.json: ${putResponse.statusText}`);
+        if (!putResponse.ok) throw new Error(`Failed to save custom-files.json: ${putResponse.status} ${putResponse.statusText}`);
         logDebug(`${FILE_PATH} saved successfully`);
       } catch (error) {
-        showError('token-error', `Error: ${error.message}`);
+        showError('token-error', `Error saving files: ${error.message}`);
       }
     }
 
@@ -299,9 +362,10 @@
     document.getElementById('detect-files').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token.');
+        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
         return;
       }
+      if (!(await checkRepoAndBranch(token))) return;
       toggleSpinner('detect-spinner', true);
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
@@ -309,7 +373,7 @@
         const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
         logDebug(`Fetching comparison: ${compareUrl}`);
         const response = await fetch(compareUrl, { headers });
-        if (!response.ok) throw new Error(`Failed to fetch comparison: ${response.statusText}`);
+        if (!response.ok) throw new Error(`Failed to fetch comparison: ${response.status} ${response.statusText}`);
         const data = await response.json();
         const newFiles = data.files
           .map(f => f.filename)
@@ -319,7 +383,7 @@
         await saveFiles();
         renderFileList();
       } catch (error) {
-        showError('token-error', `Error: ${error.message}`);
+        showError('token-error', `Error detecting files: ${error.message}`);
       } finally {
         toggleSpinner('detect-spinner', false);
       }
@@ -329,9 +393,10 @@
     document.getElementById('check-upstream').addEventListener('click', async () => {
       const token = tokenInput.value;
       if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token.');
+        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token.');
         return;
       }
+      if (!(await checkRepoAndBranch(token))) return;
       toggleSpinner('check-spinner', true);
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       const resultsBody = document.getElementById('results-body');
@@ -343,17 +408,11 @@
 
       try {
         if (!(await checkRateLimit(headers))) return;
-        // Check branch existence
-        const branchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/${BRANCH}`;
-        logDebug(`Checking branch: ${branchUrl}`);
-        const branchResponse = await fetch(branchUrl, { headers });
-        if (!branchResponse.ok) throw new Error('Custom-ui branch not found');
-
         // Get latest upstream tag
         const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags`;
         logDebug(`Fetching tags: ${tagsUrl}`);
         const tagsResponse = await fetch(tagsUrl, { headers });
-        if (!tagsResponse.ok) throw new Error(`Failed to fetch tags: ${tagsResponse.statusText}`);
+        if (!tagsResponse.ok) throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText}`);
         const tags = await tagsResponse.json();
         if (tags.length === 0) throw new Error('No upstream tags found');
         const latestTag = tags[0].name;
@@ -364,8 +423,8 @@
         const compareUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/main...${OWNER}:${BRANCH}`;
         logDebug(`Fetching non-customized files: ${compareUrl}`);
         const compareResponse = await fetch(compareUrl, { headers });
-        if (!compareResponse.ok) throw new Error(`Failed to fetch comparison: ${compareResponse.statusText}`);
-        const compareData = await response.json();
+        if (!compareResponse.ok) throw new Error(`Failed to fetch comparison: ${compareResponse.status} ${compareResponse.statusText}`);
+        const compareData = await compareResponse.json();
         const nonCustomFiles = compareData.files
           .map(f => f.filename)
           .filter(f => !files.includes(f) && !/\.(md|txt|doc|json)$/.test(f));
@@ -393,7 +452,7 @@
           const compareFileUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${latestTag}...${OWNER}:${BRANCH}`;
           logDebug(`Comparing file ${file}: ${compareFileUrl}`);
           const compareFileResponse = await fetch(compareFileUrl, { headers });
-          if (!compareFileResponse.ok) throw new Error(`Failed to check ${file}: ${compareFileResponse.statusText}`);
+          if (!compareFileResponse.ok) throw new Error(`Failed to check ${file}: ${compareFileResponse.status} ${compareFileResponse.statusText}`);
           const compareFileData = await compareFileResponse.json();
           const hasContentChanges = compareFileData.files.some(f => f.filename === file);
 
@@ -431,4 +490,14 @@
           row.innerHTML = `
             <td class="border border-gray-300 p-2">${file}</td>
             <td class="border border-gray-300 p-2">${upstreamDays === Infinity ? 'Not in upstream' : upstreamDays}</td>
-            <td class="border border-gray-300 p-2">${customDays === 0 ? 'New' : customDays
+            <td class="border border-gray-300 p-2">${customDays === 0 ? 'New' : customDays}</td>
+            <td class="border border-gray-300 p-2">${details}</td>
+          `;
+          resultsBody.appendChild(row);
+        }
+      } catch (error) {
+        showError('upstream-error', `Error checking upstream: ${error.message}`);
+      } finally {
+        toggleSpinner('check-spinner', false);
+      }
+    });
