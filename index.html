@@ -84,11 +84,8 @@
     </div>
 
     <div class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Customized Files</h2>
+      <h2 class="text-xl font-semibold mb-2 text-gray-800">Customized Files</h2>
       <div class="flex gap-4 mb-4">
-        <button id="detect-files" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 flex items-center">
-          Auto-Detect Files <span id="detect-spinner" class="spinner"></span>
-        </button>
         <button id="add-file" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Add File Manually</button>
       </div>
       <div id="file-form" class="hidden mb-4 p-4 bg-gray-50 border rounded">
@@ -96,7 +93,7 @@
         <div id="file-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
         <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save to Tracking List</button>
       </div>
-      <ul id="file-list" class="list-disc pl-5 space-y-1"></ul>
+      <ul id="file-list" class="list-disc pl-5 space-y-1 bg-white p-4 rounded-lg border shadow-sm"></ul>
     </div>
 
     <div class="mb-6">
@@ -104,7 +101,6 @@
       <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
         Analyze Differences <span id="check-spinner" class="spinner"></span>
       </button>
-      <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
       <div id="upstream-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
     </div>
 
@@ -160,7 +156,6 @@
     const branchSelect = document.getElementById('target-branch');
     const baseVersionSelect = document.getElementById('base-version');
 
-    // AUTO-LOAD SAVED SETTINGS
     window.onload = async () => {
         const savedToken = localStorage.getItem('github-token');
         if (savedToken) {
@@ -172,9 +167,7 @@
     async function initializeApp(token) {
         await loadTags(token);
         await loadBranches(token);
-        if (branchSelect.value) {
-            await loadFiles();
-        }
+        if (branchSelect.value) await loadFiles();
     }
 
     async function loadTags(token) {
@@ -183,7 +176,6 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         const response = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers });
-        if (!response.ok) throw new Error("Could not load tags.");
         const tags = await response.json();
         baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
         tags.forEach(tag => {
@@ -204,7 +196,6 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         const response = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=100`, { headers });
-        if (!response.ok) throw new Error("Could not load branches.");
         const branches = await response.json();
         branchSelect.innerHTML = '<option value="">Select a Target Branch</option>';
         branches.forEach(b => {
@@ -225,14 +216,10 @@
       localStorage.setItem('github-token', token);
       toggleSpinner('token-spinner', true);
       toggleButton('set-token', true);
-      
       await initializeApp(token);
-      
       toggleSpinner('token-spinner', false);
       toggleButton('set-token', false);
-      const success = document.getElementById('token-success');
-      success.querySelector('span').innerText = "Settings updated.";
-      success.classList.remove('hidden');
+      document.getElementById('token-success').classList.remove('hidden');
     });
 
     branchSelect.addEventListener('change', () => {
@@ -256,9 +243,6 @@
           const data = await res.json();
           files = JSON.parse(atob(data.content));
           renderFileList();
-        } else {
-            files = [];
-            renderFileList();
         }
       } catch (e) { logDebug("Load error: " + e.message); }
     }
@@ -270,7 +254,7 @@
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         let sha = null;
         const getRes = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branch}`, { headers });
-        if (getRes.ok) { sha = (await getRes.json()).sha; }
+        if (getRes.ok) sha = (await getRes.json()).sha;
         const body = {
           message: `Update tracking list`,
           content: btoa(JSON.stringify(files, null, 2)),
@@ -285,10 +269,20 @@
     function renderFileList() {
       const list = document.getElementById('file-list');
       list.innerHTML = '';
-      files.filter(f => !f.startsWith('---')).forEach(file => {
+      
+      // Filter out documentation lines so they don't show up with "Remove" buttons
+      const filteredFiles = files.filter(f => {
+        const isDoc = f.startsWith('PURPOSE:') || 
+                      f.startsWith('WORKFLOW:') || 
+                      f.match(/^\d\./) ||           // Matches "1.", "2.", etc.
+                      f.startsWith('---');
+        return !isDoc;
+      });
+
+      filteredFiles.forEach(file => {
         const li = document.createElement('li');
         li.className = 'flex justify-between items-center py-1 border-b text-sm';
-        li.innerHTML = `<span class="font-mono">${file}</span><button class="text-red-500 hover:text-red-700 text-xs font-bold" onclick="removeFile('${file}')">REMOVE</button>`;
+        li.innerHTML = `<span class="font-mono text-gray-700">${file}</span><button class="text-red-500 hover:text-red-700 text-xs font-bold" onclick="removeFile('${file}')">REMOVE</button>`;
         list.appendChild(li);
       });
     }
@@ -325,8 +319,11 @@
 
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        for (const file of files.filter(f => !f.startsWith('---'))) {
-          // Check if file modified in gristlabs main since base tag
+        
+        // Use the same filtered list for checking differences
+        const filteredFiles = files.filter(f => !f.startsWith('PURPOSE:') && !f.startsWith('WORKFLOW:') && !f.match(/^\d\./) && !f.startsWith('---'));
+
+        for (const file of filteredFiles) {
           const compUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${base}...main`;
           const compRes = await fetch(compUrl, { headers });
           const compData = await compRes.json();
