@@ -11,18 +11,18 @@
     .status-msg { padding: 12px; border-radius: 6px; margin-top: 10px; display: none; font-weight: bold; font-size: 0.85rem; }
     .err { display: block; background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; }
     .ok { display: block; background: #d1fae5; border: 1px solid #10b981; color: #065f46; }
-    .locked-section { background-color: #f8fafc; pointer-events: none; opacity: 0.6; border: 2px solid #e2e8f0 !important; }
+    .locked-section { background-color: #f1f5f9; pointer-events: none; opacity: 0.6; border: 2px solid #cbd5e1 !important; }
   </style>
 </head>
-<body class="bg-slate-100 p-4 md:p-8">
-  <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-2xl p-8 border border-slate-200">
-    <h1 class="text-3xl font-black text-slate-900 mb-8 border-b pb-4">Grist Custom-UI Manager</h1>
+<body class="bg-slate-100 p-4 md:p-8 text-slate-900">
+  <div class="max-w-6xl mx-auto bg-white shadow-2xl rounded-2xl p-8 border border-slate-200">
+    <h1 class="text-3xl font-black mb-8 border-b pb-4 tracking-tighter">Grist Custom-UI Manager</h1>
     
     <div id="section-auth" class="mb-8 p-6 border-4 border-blue-200 rounded-xl bg-blue-50">
-      <h2 class="text-sm font-black uppercase text-blue-700 mb-4 tracking-widest">Step 1: Authenticate</h2>
+      <h2 class="text-sm font-black uppercase text-blue-700 mb-4 tracking-widest">Step 1: Access Control</h2>
       <div class="flex flex-col md:flex-row gap-4">
-        <input type="password" id="token-input" class="flex-1 p-3 border-2 rounded-lg border-slate-300 outline-none focus:border-blue-500 shadow-sm" placeholder="Paste GitHub Token">
-        <button id="btn-verify-token" class="bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-8 rounded-lg flex items-center justify-center shadow-md">
+        <input type="password" id="token-input" class="flex-1 p-3 border-2 rounded-lg border-slate-300 outline-none focus:border-blue-500 shadow-sm" placeholder="GitHub Access Token">
+        <button id="btn-verify-token" class="bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-8 rounded-lg flex items-center justify-center transition-all shadow-md">
           VERIFY TOKEN <span id="spin-auth" class="spinner"></span>
         </button>
       </div>
@@ -30,53 +30,58 @@
     </div>
 
     <div id="section-lock" class="mb-8 p-6 border-4 border-slate-200 rounded-xl bg-slate-50 opacity-40 pointer-events-none">
-      <h2 class="text-sm font-black uppercase text-slate-600 mb-4 tracking-widest">Step 2: Select Comparison Branches</h2>
-      <p class="text-xs text-slate-500 mb-4 font-bold uppercase tracking-tight italic">Compare your previous customization against your current working branch.</p>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label class="block text-xs font-black text-slate-700 uppercase mb-2 italic">Previous Custom Branch (Source)</label>
-          <select id="select-base" class="w-full p-3 border-2 rounded-lg border-slate-400 bg-white shadow-sm font-semibold"></select>
+      <h2 class="text-sm font-black uppercase text-slate-600 mb-4 tracking-widest">Step 2: Version Mapping</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="space-y-4 border-r pr-8 border-slate-200">
+          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Custom Branches (teebase-net)</h3>
+          <div>
+            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Source (Previous Customization)</label>
+            <select id="select-branch-old" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Target (New Work Branch)</label>
+            <select id="select-branch-new" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
+          </div>
         </div>
-        <div>
-          <label class="block text-xs font-black text-slate-700 uppercase mb-2">New Custom Branch (Target)</label>
-          <select id="select-branch" class="w-full p-3 border-2 rounded-lg border-slate-400 bg-white shadow-sm font-semibold"></select>
+        <div class="space-y-4">
+          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">GristLabs Bases (Upstream)</h3>
+          <div>
+            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Old Upstream Tag</label>
+            <select id="select-tag-old" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">New Upstream Tag</label>
+            <select id="select-tag-new" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
+          </div>
         </div>
       </div>
-      <button id="btn-lock-scope" class="mt-6 bg-slate-900 hover:bg-black text-white font-black py-3 px-8 rounded-lg flex items-center justify-center shadow-lg w-full md:w-auto transition-all">
-        LOCK SELECTION & LOAD FILE LIST <span id="spin-lock" class="spinner"></span>
+      <button id="btn-lock-scope" class="mt-8 bg-slate-900 hover:bg-black text-white font-black py-4 px-10 rounded-lg flex items-center justify-center transition-all shadow-lg text-sm uppercase tracking-widest">
+        LOCK VERSIONS & LOAD FILE LIST <span id="spin-lock" class="spinner"></span>
       </button>
     </div>
 
     <div id="section-workspace" class="hidden">
       <div class="border-t-4 border-slate-100 pt-8 mb-8">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-black text-slate-800">Tracking Workspace</h2>
-            <button onclick="location.reload()" class="text-xs bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded font-bold text-slate-600">RESET ALL</button>
+            <h2 class="text-xl font-black text-slate-800">Tracked UI Files</h2>
+            <button onclick="location.reload()" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">RESET CONFIG</button>
         </div>
-        
-        <div class="bg-emerald-50 border-2 border-emerald-100 p-4 rounded-xl mb-6">
-            <label class="block text-xs font-black text-emerald-700 uppercase mb-2">Track New File Path</label>
-            <div class="flex gap-2">
-                <input type="text" id="input-new-file" class="flex-1 p-2 border-2 rounded border-emerald-200 outline-none focus:border-emerald-500" placeholder="e.g. app/client/ui/AppHeader.ts">
-                <button id="btn-add-file" class="bg-emerald-600 text-white px-6 py-2 rounded font-black hover:bg-emerald-700 transition">ADD</button>
-            </div>
-        </div>
-
-        <ul id="ui-file-list" class="bg-white border-2 border-slate-100 rounded-xl p-4 space-y-2 font-mono text-sm shadow-inner max-h-64 overflow-y-auto"></ul>
+        <ul id="ui-file-list" class="bg-white border-2 border-slate-100 rounded-xl p-4 space-y-2 font-mono text-sm shadow-inner max-h-48 overflow-y-auto"></ul>
       </div>
 
       <div class="border-t-4 border-slate-100 pt-8">
-        <button id="btn-run-compare" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-4 rounded-xl flex justify-center items-center shadow-xl transition-all text-lg">
-          ANALYZE DIFFERENCES <span id="spin-compare" class="spinner"></span>
+        <button id="btn-run-compare" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-5 rounded-xl flex justify-center items-center shadow-xl transition-all text-xl tracking-tight">
+          ANALYZE UPGRADE PORTABILITY <span id="spin-compare" class="spinner"></span>
         </button>
         
         <div id="ui-results-area" class="mt-8 hidden">
-          <table class="w-full border-collapse bg-white rounded-xl overflow-hidden shadow-lg">
-            <thead class="bg-slate-800 text-white">
+          <table class="w-full border-collapse bg-white rounded-xl overflow-hidden shadow-xl text-xs">
+            <thead class="bg-slate-900 text-white">
               <tr>
-                <th class="p-4 text-left uppercase text-xs tracking-widest">File Path</th>
-                <th class="p-4 text-center uppercase text-xs tracking-widest w-40">Status</th>
-                <th class="p-4 text-right uppercase text-xs tracking-widest w-32">Action</th>
+                <th class="p-4 text-left w-1/3">FILE PATH</th>
+                <th class="p-4 text-center border-x border-slate-700">PERSONAL PROGRESS</th>
+                <th class="p-4 text-center border-r border-slate-700">UPSTREAM STABILITY</th>
+                <th class="p-4 text-right">ACTION / ADVICE</th>
               </tr>
             </thead>
             <tbody id="ui-results-body"></tbody>
@@ -87,32 +92,20 @@
   </div>
 
   <script>
-    const GITHUB = {
-        owner: 'teebase-net',
-        repo: 'grist-core',
-        configFile: 'custom-files.json'
-    };
-
+    const GITHUB = { owner: 'teebase-net', repo: 'grist-core', upstream: 'gristlabs', configFile: 'custom-files.json' };
     let session = { token: '', files: [] };
-    
     const get = (id) => document.getElementById(id);
     const isDoc = (str) => /^\d+\./.test(str) || /[A-Z]+: /.test(str) || str.startsWith('---');
 
     async function callGitHub(path) {
         const r = await fetch(`https://api.github.com${path}`, {
-            headers: { 
-                'Authorization': `token ${session.token}`, 
-                'Accept': 'application/vnd.github.v3+json' 
-            }
+            headers: { 'Authorization': `token ${session.token}`, 'Accept': 'application/vnd.github.v3+json' }
         });
-        if (!r.ok) {
-            const data = await r.json();
-            throw new Error(data.message || 'GitHub error');
-        }
+        if (!r.ok) throw new Error((await r.json()).message || 'GitHub error');
         return r.json();
     }
 
-    // BUTTON 1: VERIFY TOKEN
+    // BUTTON 1: AUTH
     get('btn-verify-token').addEventListener('click', async () => {
         session.token = get('token-input').value.trim();
         if (!session.token) return;
@@ -120,136 +113,85 @@
         get('msg-auth').style.display = 'none';
 
         try {
-            // BOTH dropdowns now pull branches from your fork
-            const branches = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/branches?per_page=100`);
+            const [tags, branches] = await Promise.all([
+                callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/tags?per_page=100`),
+                callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/branches?per_page=100`)
+            ]);
+            const tOptions = tags.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+            const bOptions = branches.map(b => `<option value="${b.name}">${b.name}</option>`).join('');
             
-            const branchOptions = branches.map(b => `<option value="${b.name}">${b.name}</option>`).join('');
-            get('select-base').innerHTML = branchOptions;
-            get('select-branch').innerHTML = branchOptions;
+            get('select-tag-old').innerHTML = tOptions; get('select-tag-new').innerHTML = tOptions;
+            get('select-branch-old').innerHTML = bOptions; get('select-branch-new').innerHTML = bOptions;
             
-            get('msg-auth').innerText = "SUCCESS: Branches Loaded.";
-            get('msg-auth').className = "status-msg ok";
-            
+            get('msg-auth').innerText = "Connected Successfully."; get('msg-auth').className = "status-msg ok";
             get('section-lock').classList.remove('opacity-40', 'pointer-events-none');
             get('section-auth').classList.add('locked-section');
-        } catch (e) {
-            get('msg-auth').innerText = "ERROR: " + e.message;
-            get('msg-auth').className = "status-msg err";
-        } finally {
-            get('spin-auth').style.display = 'none';
-        }
+        } catch (e) { get('msg-auth').innerText = e.message; get('msg-auth').className = "status-msg err"; }
+        finally { get('spin-auth').style.display = 'none'; }
     });
 
-    // BUTTON 2: LOCK SCOPE & LOAD JSON
+    // BUTTON 2: LOCK & LOAD
     get('btn-lock-scope').addEventListener('click', async () => {
         get('spin-lock').style.display = 'inline-block';
         try {
-            // Load custom-files.json from the TARGET branch (the newer one)
-            const targetBranch = get('select-branch').value;
-            const content = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${targetBranch}`);
+            const targetBr = get('select-branch-new').value;
+            const content = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${targetBr}`);
             session.files = JSON.parse(atob(content.content));
-            
             get('section-workspace').classList.remove('hidden');
             get('section-lock').classList.add('locked-section');
             renderFiles();
-        } catch (e) {
-            session.files = [];
-            get('section-workspace').classList.remove('hidden');
-            get('section-lock').classList.add('locked-section');
-            renderFiles();
-        } finally {
-            get('spin-lock').style.display = 'none';
-        }
+        } catch (e) { session.files = []; get('section-workspace').classList.remove('hidden'); get('section-lock').classList.add('locked-section'); renderFiles(); }
+        finally { get('spin-lock').style.display = 'none'; }
     });
 
     function renderFiles() {
-        const list = get('ui-file-list');
         const cleanList = session.files.filter(f => !isDoc(f));
-        list.innerHTML = cleanList.length ? cleanList.map(f => `
-            <li class="flex justify-between items-center border-b border-slate-100 pb-2">
-                <span class="truncate pr-4">${f}</span>
-                <button onclick="removeFile('${f}')" class="text-red-500 hover:text-red-700 font-bold text-xs uppercase bg-red-50 px-2 py-1 rounded">Remove</button>
-            </li>`).join('') : '<li class="text-slate-400 italic text-center">No active files found.</li>';
+        get('ui-file-list').innerHTML = cleanList.length ? cleanList.map(f => `<li class="border-b border-slate-50 pb-1">${f}</li>`).join('') : '<li class="text-slate-400 italic">No files found.</li>';
     }
 
-    async function commitJson() {
-        let sha = null;
-        const branch = get('select-branch').value;
-        try {
-            const existing = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${branch}`);
-            sha = existing.sha;
-        } catch(e) {}
-        const body = { 
-            message: "Sync tracked files", 
-            content: btoa(JSON.stringify(session.files, null, 2)), 
-            branch: branch, 
-            sha: sha 
-        };
-        await fetch(`https://api.github.com/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}`, {
-            method: 'PUT',
-            headers: { 'Authorization': `token ${session.token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-    }
-
-    window.removeFile = async (name) => {
-        session.files = session.files.filter(f => f !== name);
-        await commitJson();
-        renderFiles();
-    };
-
-    get('btn-add-file').addEventListener('click', async () => {
-        const p = get('input-new-file').value.trim();
-        if (p) { 
-            session.files.push(p); 
-            await commitJson(); 
-            renderFiles(); 
-            get('input-new-file').value = ''; 
-        }
-    });
-
-    // ANALYZE BUTTON
+    // ANALYZE
     get('btn-run-compare').addEventListener('click', async () => {
         get('spin-compare').style.display = 'inline-block';
         get('ui-results-area').classList.remove('hidden');
         get('ui-results-body').innerHTML = '';
 
         try {
-            const baseBranch = get('select-base').value;
-            const targetBranch = get('select-branch').value;
-            
-            // Internal comparison within teebase-net/grist-core
-            const diffData = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/compare/${baseBranch}...${targetBranch}`);
-            
+            const bOld = get('select-branch-old').value; const bNew = get('select-branch-new').value;
+            const tOld = get('select-tag-old').value; const tNew = get('select-tag-new').value;
+
+            // Perform both comparisons
+            const [forkDiff, upstreamDiff] = await Promise.all([
+                callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/compare/${bOld}...${bNew}`),
+                callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}`)
+            ]);
+
             const activeFiles = session.files.filter(f => !isDoc(f));
-            
             for (const path of activeFiles) {
-                const hasDiff = diffData.files.some(f => f.filename === path);
-                
-                // Comparing internal branches. This URL is highly reliable.
-                const url = hasDiff 
-                    ? `https://github.com/${GITHUB.owner}/${GITHUB.repo}/compare/${baseBranch}...${targetBranch}?diff=split`
-                    : `https://github.com/${GITHUB.owner}/${GITHUB.repo}/blob/${targetBranch}/${path}`;
+                const meChanged = forkDiff.files.some(f => f.filename === path);
+                const gristChanged = upstreamDiff.files.some(f => f.filename === path);
                 
                 const tr = document.createElement('tr');
-                tr.className = "border-b border-slate-100 hover:bg-slate-50 transition";
+                tr.className = (!gristChanged) ? "bg-emerald-50/50 border-b border-emerald-100" : "bg-white border-b";
+                
                 tr.innerHTML = `
-                    <td class="p-4 font-mono text-xs text-slate-600">${path}</td>
+                    <td class="p-4 font-mono text-[10px] text-slate-600">${path}</td>
+                    <td class="p-4 text-center font-black ${meChanged ? 'text-blue-600' : 'text-slate-300'}">
+                        ${meChanged ? 'PORTED' : 'PENDING'}
+                    </td>
                     <td class="p-4 text-center">
-                        <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase ${hasDiff ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}">
-                            ${hasDiff ? '⚠️ Changed' : '✅ Clean'}
+                        <span class="px-3 py-1 rounded-full font-black tracking-tighter ${gristChanged ? 'bg-orange-100 text-orange-700' : 'bg-emerald-500 text-white'}">
+                            ${gristChanged ? '⚠️ CHANGED' : '✅ NO CHANGE'}
                         </span>
                     </td>
                     <td class="p-4 text-right">
-                        <a href="${url}" target="_blank" class="text-blue-600 font-black text-xs hover:underline uppercase tracking-tighter">Compare</a>
+                        ${gristChanged 
+                            ? `<a href="https://github.com/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}?diff=split" target="_blank" class="text-blue-600 font-bold hover:underline">Review Upstream</a>` 
+                            : `<span class="text-emerald-700 font-black">SAFE TO COPY OLD FILE</span>`}
                     </td>`;
                 get('ui-results-body').appendChild(tr);
             }
-        } catch (e) { 
-            alert("Analysis failed: " + e.message); 
-        } finally { 
-            get('spin-compare').style.display = 'none'; 
-        }
+        } catch (e) { alert("Comparison Error: " + e.message); }
+        finally { get('spin-compare').style.display = 'none'; }
     });
   </script>
 </body>
