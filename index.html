@@ -42,35 +42,41 @@
 <body class="bg-gray-100 font-sans">
   <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
-    <p class="mb-4">Manage your customized files and update from <code>teebase-net/grist-core:main</code>.</p>
+    <p class="mb-4">Manage customized files in your fork and check against <code>gristlabs/main</code>.</p>
     
     <div id="init-error" class="error-message hidden">
       <span>Failed to initialize app. Check console for details.</span>
       <button onclick="this.parentElement.classList.add('hidden')">✕</button>
     </div>
 
-    <div class="mb-6">
+    <div class="mb-6 p-4 bg-white rounded-lg shadow-sm border">
       <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
-      <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
+      <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="ghp_xxxxxxxxxxxx">
 
-      <label for="base-version" class="block text-sm font-medium text-gray-700 mt-4">Base Version (Latest gristlabs/grist-core tag your branch is updated against)</label>
-      <div class="flex items-center">
-        <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
-          <option value="">Select a Base Version</option>
-        </select>
-        <span id="base-version-spinner" class="spinner"></span>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div>
+          <label for="base-version" class="block text-sm font-medium text-gray-700">Base Version (Upstream Tag)</label>
+          <div class="flex items-center">
+            <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
+              <option value="">Select a Base Version</option>
+            </select>
+            <span id="base-version-spinner" class="spinner"></span>
+          </div>
+        </div>
+
+        <div>
+          <label for="target-branch" class="block text-sm font-medium text-gray-700">Target Branch (Your Fork)</label>
+          <div class="flex items-center">
+            <select id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
+              <option value="">Enter token to load branches...</option>
+            </select>
+            <span id="branch-spinner" class="spinner"></span>
+          </div>
+        </div>
       </div>
 
-      <label for="target-branch" class="block text-sm font-medium text-gray-700 mt-4">Target Branch (The branch you are currently updating)</label>
-      <div class="flex items-center">
-        <select id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
-          <option value="">Select a Target Branch</option>
-        </select>
-        <span id="branch-spinner" class="spinner"></span>
-      </div>
-
-      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
-        Set Token, Version & Branch <span id="token-spinner" class="spinner"></span>
+      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center transition">
+        Set Token & Load Config <span id="token-spinner" class="spinner"></span>
       </button>
       
       <div id="token-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
@@ -85,19 +91,18 @@
         </button>
         <button id="add-file" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Add File Manually</button>
       </div>
-      <div id="file-form" class="hidden mb-4">
+      <div id="file-form" class="hidden mb-4 p-4 bg-gray-50 border rounded">
         <input type="text" id="file-path" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., app/client/ui/CustomWidget.ts">
         <div id="file-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
-        <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save</button>
+        <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save to Tracking List</button>
       </div>
-      <ul id="file-list" class="list-disc pl-5"></ul>
-      <button id="show-more" class="mt-2 text-blue-600 hover:underline hidden">Show More</button>
+      <ul id="file-list" class="list-disc pl-5 space-y-1"></ul>
     </div>
 
     <div class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Check Customized Files</h2>
+      <h2 class="text-xl font-semibold mb-2">Check Upstream Status</h2>
       <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
-        Check Customized Files <span id="check-spinner" class="spinner"></span>
+        Analyze Differences <span id="check-spinner" class="spinner"></span>
       </button>
       <p id="latest-tag" class="text-sm text-gray-600 mt-2"></p>
       <div id="upstream-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
@@ -105,27 +110,21 @@
 
     <div id="results" class="hidden mb-6">
       <h2 class="text-xl font-semibold mb-2">Customized Files Status</h2>
-      <table class="w-full border-collapse border border-gray-300">
+      <table class="w-full border-collapse border border-gray-300 bg-white">
         <thead>
           <tr class="bg-gray-200">
-            <th class="border border-gray-300 p-2 text-left">File</th>
+            <th class="border border-gray-300 p-2 text-left">File Path</th>
             <th class="border border-gray-300 p-2">Upstream Status</th>
-            <th class="border border-gray-300 p-2">Actions</th>
+            <th class="border border-gray-300 p-2 text-right">Actions</th>
           </tr>
         </thead>
         <tbody id="results-body"></tbody>
       </table>
     </div>
 
-    <div id="upstream-updates" class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Update Branch from main</h2>
-      <button id="sync-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
-        Perform Sync <span id="sync-spinner" class="spinner"></span>
-      </button>
-      <div id="sync-message" class="info-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
+    <div class="mt-8 pt-4 border-t text-xs text-gray-500">
+      <p id="rate-limit-info">GitHub API Rate Limit: --</p>
     </div>
-
-    <div class="mt-4 text-sm text-gray-600"><p id="rate-limit-info"></p></div>
   </div>
 
   <script>
@@ -136,10 +135,9 @@
     const UPSTREAM_REPO = 'grist-core';
     const FILE_PATH = 'custom-files.json';
     let files = [];
-    let baseVersion = '';
 
     function logDebug(message) {
-      console.log(`[Grist Custom-UI Manager @ ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' })}] ${message}`);
+      console.log(`[Grist Manager @ ${new Date().toLocaleTimeString('en-AU')}] ${message}`);
     }
 
     function toggleSpinner(id, show) {
@@ -158,24 +156,26 @@
       el.classList.remove('hidden');
     }
 
-    function showSuccess(id, message) {
-      const el = document.getElementById(id);
-      el.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
-      el.classList.remove('hidden');
-    }
-
     const tokenInput = document.getElementById('github-token');
     const branchSelect = document.getElementById('target-branch');
     const baseVersionSelect = document.getElementById('base-version');
 
-    // INITIAL LOAD
-    window.onload = () => {
-        tokenInput.value = localStorage.getItem('github-token') || '';
-        if (tokenInput.value) {
-            loadTags(tokenInput.value);
-            loadBranches(tokenInput.value);
+    // AUTO-LOAD SAVED SETTINGS
+    window.onload = async () => {
+        const savedToken = localStorage.getItem('github-token');
+        if (savedToken) {
+            tokenInput.value = savedToken;
+            await initializeApp(savedToken);
         }
     };
+
+    async function initializeApp(token) {
+        await loadTags(token);
+        await loadBranches(token);
+        if (branchSelect.value) {
+            await loadFiles();
+        }
+    }
 
     async function loadTags(token) {
       baseVersionSelect.disabled = true;
@@ -183,6 +183,7 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         const response = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers });
+        if (!response.ok) throw new Error("Could not load tags.");
         const tags = await response.json();
         baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
         tags.forEach(tag => {
@@ -190,7 +191,8 @@
           option.value = tag.name; option.textContent = tag.name;
           baseVersionSelect.appendChild(option);
         });
-        if (localStorage.getItem('base-version')) baseVersionSelect.value = localStorage.getItem('base-version');
+        const saved = localStorage.getItem('base-version');
+        if (saved) baseVersionSelect.value = saved;
         baseVersionSelect.disabled = false;
       } catch (e) { logDebug("Tag Error: " + e.message); }
       finally { toggleSpinner('base-version-spinner', false); }
@@ -201,15 +203,17 @@
       toggleSpinner('branch-spinner', true);
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const response = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=50`, { headers });
+        const response = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=100`, { headers });
+        if (!response.ok) throw new Error("Could not load branches.");
         const branches = await response.json();
-        branchSelect.innerHTML = '<option value="">Select a Branch</option>';
+        branchSelect.innerHTML = '<option value="">Select a Target Branch</option>';
         branches.forEach(b => {
           const option = document.createElement('option');
           option.value = b.name; option.textContent = b.name;
           branchSelect.appendChild(option);
         });
-        if (localStorage.getItem('target-branch')) branchSelect.value = localStorage.getItem('target-branch');
+        const saved = localStorage.getItem('target-branch');
+        if (saved) branchSelect.value = saved;
         branchSelect.disabled = false;
       } catch (e) { logDebug("Branch Error: " + e.message); }
       finally { toggleSpinner('branch-spinner', false); }
@@ -217,21 +221,18 @@
 
     document.getElementById('set-token').addEventListener('click', async () => {
       const token = tokenInput.value.trim();
+      if (!token) { showError('token-error', "Token required."); return; }
       localStorage.setItem('github-token', token);
       toggleSpinner('token-spinner', true);
       toggleButton('set-token', true);
       
-      await loadTags(token);
-      await loadBranches(token);
-      
-      if (branchSelect.value) {
-          localStorage.setItem('target-branch', branchSelect.value);
-          await loadFiles();
-      }
+      await initializeApp(token);
       
       toggleSpinner('token-spinner', false);
       toggleButton('set-token', false);
-      showSuccess('token-success', 'Configuration refreshed.');
+      const success = document.getElementById('token-success');
+      success.querySelector('span').innerText = "Settings updated.";
+      success.classList.remove('hidden');
     });
 
     branchSelect.addEventListener('change', () => {
@@ -255,6 +256,9 @@
           const data = await res.json();
           files = JSON.parse(atob(data.content));
           renderFileList();
+        } else {
+            files = [];
+            renderFileList();
         }
       } catch (e) { logDebug("Load error: " + e.message); }
     }
@@ -268,14 +272,14 @@
         const getRes = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branch}`, { headers });
         if (getRes.ok) { sha = (await getRes.json()).sha; }
         const body = {
-          message: `Update ${FILE_PATH}`,
+          message: `Update tracking list`,
           content: btoa(JSON.stringify(files, null, 2)),
           branch: branch, sha: sha
         };
         await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`, {
           method: 'PUT', headers, body: JSON.stringify(body)
         });
-      } catch (e) { showError('token-error', e.message); }
+      } catch (e) { showError('token-error', "Save failed: " + e.message); }
     }
 
     function renderFileList() {
@@ -283,8 +287,8 @@
       list.innerHTML = '';
       files.filter(f => !f.startsWith('---')).forEach(file => {
         const li = document.createElement('li');
-        li.className = 'flex justify-between max-w-md my-1';
-        li.innerHTML = `<span>${file}</span><button class="text-red-500" onclick="removeFile('${file}')">Remove</button>`;
+        li.className = 'flex justify-between items-center py-1 border-b text-sm';
+        li.innerHTML = `<span class="font-mono">${file}</span><button class="text-red-500 hover:text-red-700 text-xs font-bold" onclick="removeFile('${file}')">REMOVE</button>`;
         list.appendChild(li);
       });
     }
@@ -311,9 +315,8 @@
 
     document.getElementById('check-upstream').addEventListener('click', async () => {
       const token = tokenInput.value;
-      const branch = branchSelect.value;
       const base = baseVersionSelect.value;
-      if (!base) { showError('upstream-error', "Select a Base Version first."); return; }
+      if (!base) { showError('upstream-error', "Please select an Upstream Base Version first."); return; }
       
       toggleSpinner('check-spinner', true);
       const resultsBody = document.getElementById('results-body');
@@ -323,28 +326,26 @@
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
         for (const file of files.filter(f => !f.startsWith('---'))) {
+          // Check if file modified in gristlabs main since base tag
           const compUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${base}...main`;
           const compRes = await fetch(compUrl, { headers });
           const compData = await compRes.json();
           const isMod = compData.files.some(f => f.filename === file);
 
           const row = document.createElement('tr');
+          row.className = "hover:bg-gray-50";
           row.innerHTML = `
-            <td class="border p-2 font-mono text-sm">${file}</td>
-            <td class="border p-2 text-center ${isMod ? 'text-orange-600 font-bold' : 'text-green-600'}">${isMod ? '⚠️ Modified' : '✅ Clean'}</td>
-            <td class="border p-2 text-center">
-                <a href="https://github.com/gristlabs/grist-core/blob/main/${file}" target="_blank" class="text-blue-600 hover:underline">Upstream</a> |
-                <a href="https://github.com/${OWNER}/${REPO}/blob/${branch}/${file}" target="_blank" class="text-purple-600 hover:underline">Yours</a>
+            <td class="border p-2 font-mono text-xs">${file}</td>
+            <td class="border p-2 text-center text-xs ${isMod ? 'text-orange-600 font-bold' : 'text-green-600'}">${isMod ? '⚠️ CHANGED' : '✅ NO CHANGE'}</td>
+            <td class="border p-2 text-right text-xs">
+                <a href="https://github.com/gristlabs/grist-core/blob/main/${file}" target="_blank" class="text-blue-600 hover:underline mr-2">Upstream</a>
+                <a href="https://github.com/${OWNER}/${REPO}/blob/${branchSelect.value}/${file}" target="_blank" class="text-purple-600 hover:underline">Yours</a>
             </td>
           `;
           resultsBody.appendChild(row);
         }
       } catch (e) { showError('upstream-error', e.message); }
       finally { toggleSpinner('check-spinner', false); }
-    });
-
-    document.getElementById('sync-update').addEventListener('click', () => {
-        alert("Manual copy-paste workflow recommended to keep main stock.");
     });
   </script>
 </body>
