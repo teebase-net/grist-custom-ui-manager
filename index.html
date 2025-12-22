@@ -8,73 +8,75 @@
   <style>
     .spinner { display: none; border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 18px; height: 18px; animation: spin 1s linear infinite; margin-left: 10px; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .status-msg { padding: 12px; border-radius: 6px; margin-top: 10px; display: none; font-weight: 500; }
+    .status-msg { padding: 12px; border-radius: 6px; margin-top: 10px; display: none; font-weight: 500; font-size: 0.85rem; }
     .err { display: block; background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; }
     .ok { display: block; background: #d1fae5; border: 1px solid #10b981; color: #065f46; }
+    .locked { background-color: #f8fafc; pointer-events: none; opacity: 0.7; border-color: #e2e8f0; }
   </style>
 </head>
 <body class="bg-slate-50 p-4 md:p-8">
   <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6 border border-slate-200">
     <h1 class="text-2xl font-bold text-slate-800 mb-6">Grist Custom-UI Manager</h1>
     
-    <div class="space-y-4 mb-8">
-      <div>
-        <label class="block text-sm font-bold text-slate-700">1. GitHub Personal Access Token</label>
-        <input type="password" id="token" class="w-full mt-1 p-2 border rounded border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="ghp_xxxxxx">
+    <div id="step-1" class="mb-6 p-4 border-2 border-blue-100 rounded-lg">
+      <h2 class="text-sm font-black uppercase text-blue-600 mb-3">Step 1: Authenticate</h2>
+      <div class="flex gap-2">
+        <input type="password" id="token" class="flex-1 p-2 border rounded border-slate-300 outline-none focus:border-blue-500" placeholder="Enter GitHub Personal Access Token">
+        <button id="btn-auth" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded flex items-center transition">
+          Verify Token <span id="spin-auth" class="spinner"></span>
+        </button>
       </div>
+      <div id="msg-auth" class="status-msg"></div>
+    </div>
 
+    <div id="step-2" class="mb-6 p-4 border-2 border-slate-100 rounded-lg opacity-40 pointer-events-none">
+      <h2 class="text-sm font-black uppercase text-slate-500 mb-3">Step 2: Select Versions</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-bold text-slate-700">Upstream Base (Tags)</label>
-          <select id="base-ver" class="w-full mt-1 p-2 border rounded bg-slate-100" disabled>
-            <option>Enter Token First...</option>
-          </select>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Upstream Tag (Base)</label>
+          <select id="base-ver" class="w-full p-2 border rounded outline-none focus:border-blue-500"></select>
         </div>
         <div>
-          <label class="block text-sm font-bold text-slate-700">Your Branch</label>
-          <select id="target-br" class="w-full mt-1 p-2 border rounded bg-slate-100" disabled>
-            <option>Enter Token First...</option>
-          </select>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Your Fork Branch (Target)</label>
+          <select id="target-br" class="w-full p-2 border rounded outline-none focus:border-blue-500"></select>
         </div>
       </div>
-
-      <div class="flex items-center gap-3">
-        <button id="btn-setup" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded transition flex items-center">
-          Connect to GitHub <span id="spin-setup" class="spinner"></span>
-        </button>
-        <button onclick="localStorage.clear(); location.reload();" class="text-slate-400 text-xs underline">Clear Cache</button>
-      </div>
-      
-      <div id="msg-box" class="status-msg"></div>
-    </div>
-
-    <div class="border-t pt-6 mb-8">
-      <h2 class="text-lg font-bold text-slate-800 mb-4">2. Your Customized Files</h2>
-      <div id="file-ui" class="opacity-40 pointer-events-none">
-        <div class="flex gap-2 mb-4">
-            <input type="text" id="new-path" class="flex-1 p-2 border rounded" placeholder="path/to/file.ts">
-            <button id="btn-add" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Add</button>
-        </div>
-        <ul id="file-list" class="bg-slate-50 border rounded p-4 space-y-2 font-mono text-sm"></ul>
-      </div>
-    </div>
-
-    <div class="border-t pt-6">
-      <button id="btn-check" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg flex justify-center items-center">
-        Analyze Differences Against Upstream <span id="spin-check" class="spinner"></span>
+      <button id="btn-lock" class="mt-4 bg-slate-800 hover:bg-black text-white font-bold py-2 px-6 rounded flex items-center transition">
+        Lock Configuration & Load Files <span id="spin-lock" class="spinner"></span>
       </button>
-      
-      <div id="results-area" class="mt-6 hidden">
-        <table class="w-full border-collapse border border-slate-200 text-sm">
-          <thead class="bg-slate-100">
-            <tr>
-              <th class="border p-2 text-left">File</th>
-              <th class="border p-2 text-center w-24">Status</th>
-              <th class="border p-2 text-right w-24">Action</th>
-            </tr>
-          </thead>
-          <tbody id="results-body"></tbody>
-        </table>
+      <div id="msg-lock" class="status-msg"></div>
+    </div>
+
+    <div id="step-3" class="hidden">
+      <div class="border-t pt-6 mb-8">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-bold text-slate-800">Customized Files</h2>
+            <button onclick="location.reload()" class="text-xs text-blue-600 hover:text-blue-800 underline font-bold">Change Config</button>
+        </div>
+        <div class="flex gap-2 mb-4">
+            <input type="text" id="new-path" class="flex-1 p-2 border rounded" placeholder="e.g. app/client/ui/AppHeader.ts">
+            <button id="btn-add" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 transition">Add</button>
+        </div>
+        <ul id="file-list" class="bg-slate-50 border rounded p-4 space-y-2 font-mono text-sm shadow-inner"></ul>
+      </div>
+
+      <div class="border-t pt-6">
+        <button id="btn-check" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg flex justify-center items-center shadow-lg transition">
+          Analyze Differences Against Upstream <span id="spin-check" class="spinner"></span>
+        </button>
+        
+        <div id="results-area" class="mt-6 hidden">
+          <table class="w-full border-collapse border border-slate-200 text-sm">
+            <thead class="bg-slate-100 text-slate-600">
+              <tr>
+                <th class="border p-2 text-left">File Path</th>
+                <th class="border p-2 text-center w-32">Status</th>
+                <th class="border p-2 text-right w-24">Action</th>
+              </tr>
+            </thead>
+            <tbody id="results-body" class="bg-white"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -83,134 +85,170 @@
     const CONFIG = {
         owner: 'teebase-net',
         repo: 'grist-core',
-        upstream: 'gristlabs/grist-core',
+        upstreamOwner: 'gristlabs',
         jsonFile: 'custom-files.json'
     };
 
     let state = { token: '', files: [] };
-    const el = {
+    
+    const ui = {
         token: document.getElementById('token'),
         base: document.getElementById('base-ver'),
         branch: document.getElementById('target-br'),
-        msg: document.getElementById('msg-box'),
+        msgAuth: document.getElementById('msg-auth'),
+        msgLock: document.getElementById('msg-lock'),
+        step2: document.getElementById('step-2'),
+        step3: document.getElementById('step-3'),
         list: document.getElementById('file-list'),
-        fileUI: document.getElementById('file-ui'),
-        results: document.getElementById('results-area'),
-        body: document.getElementById('results-body')
+        body: document.getElementById('results-body'),
+        resArea: document.getElementById('results-area')
     };
 
-    function isDocLine(line) {
-        // Regex: Starts with digit+dot (1.) OR contains "KEYWORD: "
-        return /^\d+\./.test(line) || /[A-Z]+: /.test(line) || line.startsWith('---');
-    }
-
-    function notify(text, type='ok') {
-        el.msg.innerText = text;
-        el.msg.className = `status-msg ${type}`;
+    function isDocLine(line) { 
+        return /^\d+\./.test(line) || /[A-Z]+: /.test(line) || line.startsWith('---'); 
     }
 
     async function ghFetch(path) {
         const r = await fetch(`https://api.github.com${path}`, {
-            headers: { 'Authorization': `token ${state.token}`, 'Accept': 'application/vnd.github.v3+json' }
+            headers: { 
+                'Authorization': `token ${state.token}`, 
+                'Accept': 'application/vnd.github.v3+json' 
+            }
         });
-        if (!r.ok) throw new Error((await r.json()).message || 'GitHub Error');
+        if (!r.ok) {
+            const err = await r.json();
+            throw new Error(err.message || 'GitHub Error');
+        }
         return r.json();
     }
 
-    async function init() {
-        state.token = el.token.value.trim();
+    // Step 1: Connect Token
+    document.getElementById('btn-auth').addEventListener('click', async () => {
+        state.token = ui.token.value.trim();
         if (!state.token) return;
-        document.getElementById('spin-setup').style.display = 'inline-block';
-        localStorage.setItem('gh-token', state.token);
-        try {
-            const tags = await ghFetch(`/repos/${CONFIG.upstream}/tags?per_page=20`);
-            el.base.innerHTML = tags.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
-            el.base.disabled = false;
-            const branches = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/branches?per_page=100`);
-            el.branch.innerHTML = branches.map(b => `<option value="${b.name}">${b.name}</option>`).join('');
-            el.branch.disabled = false;
-            notify("Connected successfully.");
-            el.fileUI.classList.remove('opacity-40', 'pointer-events-none');
-            await loadFileList();
-        } catch (e) { notify("Failed: " + e.message, "err"); }
-        finally { document.getElementById('spin-setup').style.display = 'none'; }
-    }
+        document.getElementById('spin-auth').style.display = 'inline-block';
+        ui.msgAuth.style.display = 'none';
 
-    async function loadFileList() {
         try {
-            const data = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.jsonFile}?ref=${el.branch.value}`);
+            const tags = await ghFetch(`/repos/${CONFIG.upstreamOwner}/${CONFIG.repo}/tags?per_page=30`);
+            ui.base.innerHTML = tags.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+            
+            const branches = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/branches?per_page=100`);
+            ui.branch.innerHTML = branches.map(b => `<option value="${b.name}">${b.name}</option>`).join('');
+            
+            ui.msgAuth.innerText = "Token Verified."; ui.msgAuth.className = "status-msg ok";
+            ui.step2.classList.remove('opacity-40', 'pointer-events-none');
+            document.getElementById('step-1').classList.add('locked');
+        } catch (e) {
+            ui.msgAuth.innerText = "Auth Failed: " + e.message; ui.msgAuth.className = "status-msg err";
+        } finally { document.getElementById('spin-auth').style.display = 'none'; }
+    });
+
+    // Step 2: Lock & Load
+    document.getElementById('btn-lock').addEventListener('click', async () => {
+        document.getElementById('spin-lock').style.display = 'inline-block';
+        try {
+            const data = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.jsonFile}?ref=${ui.branch.value}`);
             state.files = JSON.parse(atob(data.content));
+            
+            ui.step3.classList.remove('hidden');
+            ui.step2.classList.add('locked');
             renderFiles();
-        } catch (e) { state.files = []; renderFiles(); }
-    }
+        } catch (e) {
+            state.files = [];
+            ui.step3.classList.remove('hidden');
+            ui.step2.classList.add('locked');
+            renderFiles();
+        } finally { document.getElementById('spin-lock').style.display = 'none'; }
+    });
 
     function renderFiles() {
-        // Only show actual file paths in the list
         const filtered = state.files.filter(f => !isDocLine(f));
-        el.list.innerHTML = filtered.length ? filtered.map(f => `
-            <li class="flex justify-between items-center border-b pb-1">
+        ui.list.innerHTML = filtered.length ? filtered.map(f => `
+            <li class="flex justify-between items-center border-b border-slate-200 pb-1">
                 <span>${f}</span>
-                <button onclick="removeFile('${f}')" class="text-red-500 text-xs">Remove</button>
-            </li>`).join('') : '<li class="text-slate-400 italic">No files tracked.</li>';
+                <button onclick="removeFile('${f}')" class="text-red-500 hover:text-red-700 text-xs font-bold">Remove</button>
+            </li>`).join('') : '<li class="text-slate-400 italic text-center">No files tracked in this branch.</li>';
     }
 
-    async function saveFileChange() {
+    async function syncJson() {
         let sha = null;
         try {
-            const existing = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.jsonFile}?ref=${el.branch.value}`);
+            const existing = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.jsonFile}?ref=${ui.branch.value}`);
             sha = existing.sha;
         } catch(e) {}
-        const body = { message: "Update tracking list", content: btoa(JSON.stringify(state.files, null, 2)), branch: el.branch.value, sha: sha };
+        const body = { 
+            message: "Update customized files tracking", 
+            content: btoa(JSON.stringify(state.files, null, 2)), 
+            branch: ui.branch.value, 
+            sha: sha 
+        };
         await fetch(`https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.jsonFile}`, {
             method: 'PUT',
-            headers: { 'Authorization': `token ${state.token}` },
+            headers: { 
+                'Authorization': `token ${state.token}`,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(body)
         });
     }
 
     window.removeFile = async (name) => {
         state.files = state.files.filter(f => f !== name);
-        await saveFileChange();
+        await syncJson();
         renderFiles();
     };
 
-    document.getElementById('btn-setup').addEventListener('click', init);
     document.getElementById('btn-add').addEventListener('click', async () => {
         const p = document.getElementById('new-path').value.trim();
-        if (p) { state.files.push(p); await saveFileChange(); renderFiles(); document.getElementById('new-path').value = ''; }
+        if (p) { 
+            state.files.push(p); 
+            await syncJson(); 
+            renderFiles(); 
+            document.getElementById('new-path').value = ''; 
+        }
     });
 
     document.getElementById('btn-check').addEventListener('click', async () => {
         document.getElementById('spin-check').style.display = 'inline-block';
-        el.results.classList.remove('hidden');
-        el.body.innerHTML = '';
+        ui.resArea.classList.remove('hidden');
+        ui.body.innerHTML = '';
         try {
-            // Compare upstream main to your branch
-            const comp = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/compare/main...${el.branch.value}`);
+            const baseTag = ui.base.value;
+            const targetBranch = ui.branch.value;
+            
+            // Cross-repo comparison: upstreamOwner:tag...yourOwner:branch
+            const compareData = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/compare/${CONFIG.upstreamOwner}:${baseTag}...${targetBranch}`);
+            
             const filteredFiles = state.files.filter(f => !isDocLine(f));
             
             for (const file of filteredFiles) {
-                const isMod = comp.files.some(f => f.filename === file);
-                // Compare link: If modified, go to the side-by-side diff page. If clean, go to your file.
+                const fileDiff = compareData.files.find(f => f.filename === file);
+                const isMod = !!fileDiff;
+                
+                // Compare link: Directly compares the two specific points in the repo
                 const url = isMod 
-                    ? `https://github.com/${CONFIG.owner}/${CONFIG.repo}/compare/main...${el.branch.value}?diff=split`
-                    : `https://github.com/${CONFIG.owner}/${CONFIG.repo}/blob/${el.branch.value}/${file}`;
+                    ? `https://github.com/${CONFIG.owner}/${CONFIG.repo}/compare/${baseTag}...${targetBranch}?diff=split`
+                    : `https://github.com/${CONFIG.owner}/${CONFIG.repo}/blob/${targetBranch}/${file}`;
                 
                 const row = document.createElement('tr');
+                row.className = "hover:bg-slate-50";
                 row.innerHTML = `
-                    <td class="border p-2 font-mono text-xs">${file}</td>
-                    <td class="border p-2 text-center text-xs font-bold ${isMod ? 'text-orange-600' : 'text-emerald-600'}">${isMod ? 'CHANGED' : 'CLEAN'}</td>
-                    <td class="border p-2 text-right"><a href="${url}" target="_blank" class="text-blue-600 font-bold text-xs">Compare</a></td>`;
-                el.body.appendChild(row);
+                    <td class="border p-2 font-mono text-xs text-slate-700">${file}</td>
+                    <td class="border p-2 text-center text-xs font-bold ${isMod ? 'text-orange-600' : 'text-emerald-600'}">
+                        ${isMod ? '⚠️ CHANGED' : '✅ CLEAN'}
+                    </td>
+                    <td class="border p-2 text-right">
+                        <a href="${url}" target="_blank" class="text-blue-600 hover:text-blue-800 font-bold text-xs underline">Compare</a>
+                    </td>`;
+                ui.body.appendChild(row);
             }
-        } catch (e) { alert(e.message); }
-        finally { document.getElementById('spin-check').style.display = 'none'; }
+        } catch (e) { 
+            alert("Analysis Failed: " + e.message); 
+        } finally { 
+            document.getElementById('spin-check').style.display = 'none'; 
+        }
     });
-
-    window.onload = () => {
-        const saved = localStorage.getItem('gh-token');
-        if (saved) { el.token.value = saved; init(); }
-    };
   </script>
 </body>
 </html>
