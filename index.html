@@ -33,79 +33,64 @@
     .error-message button, .success-message button, .info-message button {
       position: absolute; top: 8px; right: 8px; background: none; border: none; cursor: pointer;
     }
-    .error-message button { color: #ef4444; }
-    .success-message button { color: #10b981; }
-    .info-message button { color: #0284c7; }
     pre { white-space: pre-wrap; word-break: break-all; }
   </style>
 </head>
 <body class="bg-gray-100 font-sans">
   <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
-    <p class="mb-4">Manage customized files in your fork and check against <code>gristlabs/main</code>.</p>
     
-    <div id="init-error" class="error-message hidden">
-      <span>Failed to initialize app. Check console for details.</span>
-      <button onclick="this.parentElement.classList.add('hidden')">✕</button>
-    </div>
-
     <div class="mb-6 p-4 bg-white rounded-lg shadow-sm border">
-      <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
-      <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="ghp_xxxxxxxxxxxx">
+      <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Token</label>
+      <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div>
           <label for="base-version" class="block text-sm font-medium text-gray-700">Base Version (Upstream Tag)</label>
           <div class="flex items-center">
-            <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
-              <option value="">Select a Base Version</option>
+            <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" disabled>
+              <option value="">Select Version</option>
             </select>
             <span id="base-version-spinner" class="spinner"></span>
           </div>
         </div>
-
         <div>
           <label for="target-branch" class="block text-sm font-medium text-gray-700">Target Branch (Your Fork)</label>
           <div class="flex items-center">
-            <select id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
-              <option value="">Enter token to load branches...</option>
+            <select id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" disabled>
+              <option value="">Select Branch</option>
             </select>
             <span id="branch-spinner" class="spinner"></span>
           </div>
         </div>
       </div>
 
-      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center transition">
+      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md flex items-center">
         Set Token & Load Config <span id="token-spinner" class="spinner"></span>
       </button>
-      
-      <div id="token-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
-      <div id="token-success" class="success-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
+      <div id="token-error" class="error-message hidden"><span></span></div>
+      <div id="token-success" class="success-message hidden"><span></span></div>
     </div>
 
     <div class="mb-6">
-      <h2 class="text-xl font-semibold mb-2 text-gray-800">Customized Files</h2>
-      <div class="flex gap-4 mb-4">
-        <button id="add-file" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Add File Manually</button>
-      </div>
+      <h2 class="text-xl font-semibold mb-2">Customized Files</h2>
+      <button id="add-file" class="bg-green-600 text-white px-4 py-2 rounded-md mb-4">Add File Manually</button>
       <div id="file-form" class="hidden mb-4 p-4 bg-gray-50 border rounded">
-        <input type="text" id="file-path" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., app/client/ui/CustomWidget.ts">
-        <div id="file-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
-        <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save to Tracking List</button>
+        <input type="text" id="file-path" class="w-full rounded-md border-gray-300 shadow-sm" placeholder="Path to file">
+        <button id="save-file" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md">Save</button>
       </div>
-      <ul id="file-list" class="list-disc pl-5 space-y-1 bg-white p-4 rounded-lg border shadow-sm"></ul>
+      <ul id="file-list" class="list-disc pl-5 space-y-1"></ul>
     </div>
 
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Check Upstream Status</h2>
-      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
+      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center">
         Analyze Differences <span id="check-spinner" class="spinner"></span>
       </button>
-      <div id="upstream-error" class="error-message hidden"><span></span><button onclick="this.parentElement.classList.add('hidden')">✕</button></div>
+      <div id="upstream-error" class="error-message hidden"><span></span></div>
     </div>
 
     <div id="results" class="hidden mb-6">
-      <h2 class="text-xl font-semibold mb-2">Customized Files Status</h2>
       <table class="w-full border-collapse border border-gray-300 bg-white">
         <thead>
           <tr class="bg-gray-200">
@@ -116,10 +101,6 @@
         </thead>
         <tbody id="results-body"></tbody>
       </table>
-    </div>
-
-    <div class="mt-8 pt-4 border-t text-xs text-gray-500">
-      <p id="rate-limit-info">GitHub API Rate Limit: --</p>
     </div>
   </div>
 
@@ -132,61 +113,40 @@
     const FILE_PATH = 'custom-files.json';
     let files = [];
 
-    function logDebug(message) {
-      console.log(`[Grist Manager @ ${new Date().toLocaleTimeString('en-AU')}] ${message}`);
-    }
-
-    function toggleSpinner(id, show) {
-      document.getElementById(id).style.display = show ? 'inline-block' : 'none';
-    }
-
-    function toggleButton(id, disabled) {
-      const btn = document.getElementById(id);
-      btn.disabled = disabled;
-      btn.classList.toggle('opacity-50', disabled);
-    }
-
-    function showError(id, message) {
-      const el = document.getElementById(id);
-      el.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
-      el.classList.remove('hidden');
-    }
+    function logDebug(msg) { console.log(`[Grist Manager @ ${new Date().toLocaleTimeString('en-AU')}] ${msg}`); }
+    function toggleSpinner(id, show) { document.getElementById(id).style.display = show ? 'inline-block' : 'none'; }
+    function showError(id, msg) { const el = document.getElementById(id); el.querySelector('span').innerText = msg; el.classList.remove('hidden'); }
 
     const tokenInput = document.getElementById('github-token');
     const branchSelect = document.getElementById('target-branch');
     const baseVersionSelect = document.getElementById('base-version');
 
     window.onload = async () => {
-        const savedToken = localStorage.getItem('github-token');
-        if (savedToken) {
-            tokenInput.value = savedToken;
-            await initializeApp(savedToken);
-        }
+      const savedToken = localStorage.getItem('github-token');
+      if (savedToken) {
+        tokenInput.value = savedToken;
+        await initializeApp(savedToken);
+      }
     };
 
     async function initializeApp(token) {
-        await loadTags(token);
-        await loadBranches(token);
-        if (branchSelect.value) await loadFiles();
+      await loadTags(token);
+      await loadBranches(token);
+      if (branchSelect.value) await loadFiles();
     }
 
     async function loadTags(token) {
       baseVersionSelect.disabled = true;
       toggleSpinner('base-version-spinner', true);
       try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const response = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers });
-        const tags = await response.json();
-        baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
-        tags.forEach(tag => {
-          const option = document.createElement('option');
-          option.value = tag.name; option.textContent = tag.name;
-          baseVersionSelect.appendChild(option);
-        });
-        const saved = localStorage.getItem('base-version');
-        if (saved) baseVersionSelect.value = saved;
+        const h = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const res = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers: h });
+        const tags = await res.json();
+        baseVersionSelect.innerHTML = '<option value="">Select Version</option>';
+        tags.forEach(t => { const o = document.createElement('option'); o.value = t.name; o.textContent = t.name; baseVersionSelect.appendChild(o); });
+        if (localStorage.getItem('base-version')) baseVersionSelect.value = localStorage.getItem('base-version');
         baseVersionSelect.disabled = false;
-      } catch (e) { logDebug("Tag Error: " + e.message); }
+      } catch (e) { logDebug("Tag Error"); }
       finally { toggleSpinner('base-version-spinner', false); }
     }
 
@@ -194,156 +154,12 @@
       branchSelect.disabled = true;
       toggleSpinner('branch-spinner', true);
       try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const response = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=100`, { headers });
-        const branches = await response.json();
-        branchSelect.innerHTML = '<option value="">Select a Target Branch</option>';
-        branches.forEach(b => {
-          const option = document.createElement('option');
-          option.value = b.name; option.textContent = b.name;
-          branchSelect.appendChild(option);
-        });
-        const saved = localStorage.getItem('target-branch');
-        if (saved) branchSelect.value = saved;
+        const h = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const res = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=100`, { headers: h });
+        const branches = await res.json();
+        branchSelect.innerHTML = '<option value="">Select Branch</option>';
+        branches.forEach(b => { const o = document.createElement('option'); o.value = b.name; o.textContent = b.name; branchSelect.appendChild(o); });
+        if (localStorage.getItem('target-branch')) branchSelect.value = localStorage.getItem('target-branch');
         branchSelect.disabled = false;
-      } catch (e) { logDebug("Branch Error: " + e.message); }
-      finally { toggleSpinner('branch-spinner', false); }
-    }
-
-    document.getElementById('set-token').addEventListener('click', async () => {
-      const token = tokenInput.value.trim();
-      if (!token) { showError('token-error', "Token required."); return; }
-      localStorage.setItem('github-token', token);
-      toggleSpinner('token-spinner', true);
-      toggleButton('set-token', true);
-      await initializeApp(token);
-      toggleSpinner('token-spinner', false);
-      toggleButton('set-token', false);
-      document.getElementById('token-success').classList.remove('hidden');
-    });
-
-    branchSelect.addEventListener('change', () => {
-        localStorage.setItem('target-branch', branchSelect.value);
-        loadFiles();
-    });
-
-    baseVersionSelect.addEventListener('change', () => {
-        localStorage.setItem('base-version', baseVersionSelect.value);
-    });
-
-    async function loadFiles() {
-      const token = tokenInput.value;
-      const branch = branchSelect.value;
-      if (!token || !branch) return;
-      try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const url = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branch}`;
-        const res = await fetch(url, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          files = JSON.parse(atob(data.content));
-          renderFileList();
-        }
-      } catch (e) { logDebug("Load error: " + e.message); }
-    }
-
-    async function saveFiles() {
-      const token = tokenInput.value;
-      const branch = branchSelect.value;
-      try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        let sha = null;
-        const getRes = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branch}`, { headers });
-        if (getRes.ok) sha = (await getRes.json()).sha;
-        const body = {
-          message: `Update tracking list`,
-          content: btoa(JSON.stringify(files, null, 2)),
-          branch: branch, sha: sha
-        };
-        await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`, {
-          method: 'PUT', headers, body: JSON.stringify(body)
-        });
-      } catch (e) { showError('token-error', "Save failed: " + e.message); }
-    }
-
-    function renderFileList() {
-      const list = document.getElementById('file-list');
-      list.innerHTML = '';
-      
-      // Filter out documentation lines so they don't show up with "Remove" buttons
-      const filteredFiles = files.filter(f => {
-        const isDoc = f.startsWith('PURPOSE:') || 
-                      f.startsWith('WORKFLOW:') || 
-                      f.match(/^\d\./) ||           // Matches "1.", "2.", etc.
-                      f.startsWith('---');
-        return !isDoc;
-      });
-
-      filteredFiles.forEach(file => {
-        const li = document.createElement('li');
-        li.className = 'flex justify-between items-center py-1 border-b text-sm';
-        li.innerHTML = `<span class="font-mono text-gray-700">${file}</span><button class="text-red-500 hover:text-red-700 text-xs font-bold" onclick="removeFile('${file}')">REMOVE</button>`;
-        list.appendChild(li);
-      });
-    }
-
-    window.removeFile = async (name) => {
-        files = files.filter(f => f !== name);
-        await saveFiles();
-        renderFileList();
-    };
-
-    document.getElementById('add-file').addEventListener('click', () => {
-      document.getElementById('file-form').classList.toggle('hidden');
-    });
-
-    document.getElementById('save-file').addEventListener('click', async () => {
-      const path = document.getElementById('file-path').value.trim();
-      if (path && !files.includes(path)) {
-        files.push(path);
-        await saveFiles();
-        renderFileList();
-        document.getElementById('file-path').value = '';
-      }
-    });
-
-    document.getElementById('check-upstream').addEventListener('click', async () => {
-      const token = tokenInput.value;
-      const base = baseVersionSelect.value;
-      if (!base) { showError('upstream-error', "Please select an Upstream Base Version first."); return; }
-      
-      toggleSpinner('check-spinner', true);
-      const resultsBody = document.getElementById('results-body');
-      resultsBody.innerHTML = '';
-      document.getElementById('results').classList.remove('hidden');
-
-      try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        
-        // Use the same filtered list for checking differences
-        const filteredFiles = files.filter(f => !f.startsWith('PURPOSE:') && !f.startsWith('WORKFLOW:') && !f.match(/^\d\./) && !f.startsWith('---'));
-
-        for (const file of filteredFiles) {
-          const compUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${base}...main`;
-          const compRes = await fetch(compUrl, { headers });
-          const compData = await compRes.json();
-          const isMod = compData.files.some(f => f.filename === file);
-
-          const row = document.createElement('tr');
-          row.className = "hover:bg-gray-50";
-          row.innerHTML = `
-            <td class="border p-2 font-mono text-xs">${file}</td>
-            <td class="border p-2 text-center text-xs ${isMod ? 'text-orange-600 font-bold' : 'text-green-600'}">${isMod ? '⚠️ CHANGED' : '✅ NO CHANGE'}</td>
-            <td class="border p-2 text-right text-xs">
-                <a href="https://github.com/gristlabs/grist-core/blob/main/${file}" target="_blank" class="text-blue-600 hover:underline mr-2">Upstream</a>
-                <a href="https://github.com/${OWNER}/${REPO}/blob/${branchSelect.value}/${file}" target="_blank" class="text-purple-600 hover:underline">Yours</a>
-            </td>
-          `;
-          resultsBody.appendChild(row);
-        }
-      } catch (e) { showError('upstream-error', e.message); }
-      finally { toggleSpinner('check-spinner', false); }
-    });
-  </script>
-</body>
-</html>
+      } catch (e) { logDebug("Branch Error"); }
+      finally
