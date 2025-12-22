@@ -7,33 +7,11 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
   <style>
-    .spinner {
-      display: none;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #3498db;
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      animation: spin 1s linear infinite;
-      margin-left: 8px;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    .error-message, .success-message, .info-message {
-      position: relative;
-      padding: 8px 16px;
-      border-radius: 4px;
-      margin-top: 8px;
-    }
+    .spinner { display: none; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin-left: 8px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .error-message, .success-message { position: relative; padding: 8px 16px; border-radius: 4px; margin-top: 8px; }
     .error-message { background-color: #fee2e2; border: 1px solid #ef4444; }
     .success-message { background-color: #d1fae5; border: 1px solid #10b981; }
-    .info-message { background-color: #e0f2fe; border: 1px solid #0284c7; }
-    .error-message button, .success-message button, .info-message button {
-      position: absolute; top: 8px; right: 8px; background: none; border: none; cursor: pointer;
-    }
-    pre { white-space: pre-wrap; word-break: break-all; }
   </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -41,35 +19,26 @@
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
     
     <div class="mb-6 p-4 bg-white rounded-lg shadow-sm border">
-      <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Token</label>
+      <label class="block text-sm font-medium text-gray-700">GitHub Token</label>
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div>
-          <label for="base-version" class="block text-sm font-medium text-gray-700">Base Version (Upstream Tag)</label>
+          <label class="block text-sm font-medium text-gray-700">Base Version</label>
           <div class="flex items-center">
-            <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" disabled>
-              <option value="">Select Version</option>
-            </select>
+            <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" disabled><option value="">Select Version</option></select>
             <span id="base-version-spinner" class="spinner"></span>
           </div>
         </div>
         <div>
-          <label for="target-branch" class="block text-sm font-medium text-gray-700">Target Branch (Your Fork)</label>
+          <label class="block text-sm font-medium text-gray-700">Target Branch</label>
           <div class="flex items-center">
-            <select id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" disabled>
-              <option value="">Select Branch</option>
-            </select>
+            <select id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" disabled><option value="">Select Branch</option></select>
             <span id="branch-spinner" class="spinner"></span>
           </div>
         </div>
       </div>
-
-      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md flex items-center">
-        Set Token & Load Config <span id="token-spinner" class="spinner"></span>
-      </button>
-      <div id="token-error" class="error-message hidden"><span></span></div>
-      <div id="token-success" class="success-message hidden"><span></span></div>
+      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md flex items-center">Set Token & Load Config <span id="token-spinner" class="spinner"></span></button>
+      <div id="token-success" class="success-message hidden">Settings loaded.</div>
     </div>
 
     <div class="mb-6">
@@ -84,10 +53,7 @@
 
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Check Upstream Status</h2>
-      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center">
-        Analyze Differences <span id="check-spinner" class="spinner"></span>
-      </button>
-      <div id="upstream-error" class="error-message hidden"><span></span></div>
+      <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center">Analyze Differences <span id="check-spinner" class="spinner"></span></button>
     </div>
 
     <div id="results" class="hidden mb-6">
@@ -95,7 +61,7 @@
         <thead>
           <tr class="bg-gray-200">
             <th class="border border-gray-300 p-2 text-left">File Path</th>
-            <th class="border border-gray-300 p-2">Upstream Status</th>
+            <th class="border border-gray-300 p-2">Status</th>
             <th class="border border-gray-300 p-2 text-right">Actions</th>
           </tr>
         </thead>
@@ -105,28 +71,15 @@
   </div>
 
   <script>
-    const GITHUB_API = 'https://api.github.com';
-    const OWNER = 'teebase-net';
-    const REPO = 'grist-core';
-    const UPSTREAM_OWNER = 'gristlabs';
-    const UPSTREAM_REPO = 'grist-core';
-    const FILE_PATH = 'custom-files.json';
+    const GITHUB_API = 'https://api.github.com', OWNER = 'teebase-net', REPO = 'grist-core', UPSTREAM_OWNER = 'gristlabs', UPSTREAM_REPO = 'grist-core', FILE_PATH = 'custom-files.json';
     let files = [];
+    const tokenInput = document.getElementById('github-token'), branchSelect = document.getElementById('target-branch'), baseVersionSelect = document.getElementById('base-version');
 
-    function logDebug(msg) { console.log(`[Grist Manager @ ${new Date().toLocaleTimeString('en-AU')}] ${msg}`); }
     function toggleSpinner(id, show) { document.getElementById(id).style.display = show ? 'inline-block' : 'none'; }
-    function showError(id, msg) { const el = document.getElementById(id); el.querySelector('span').innerText = msg; el.classList.remove('hidden'); }
-
-    const tokenInput = document.getElementById('github-token');
-    const branchSelect = document.getElementById('target-branch');
-    const baseVersionSelect = document.getElementById('base-version');
 
     window.onload = async () => {
-      const savedToken = localStorage.getItem('github-token');
-      if (savedToken) {
-        tokenInput.value = savedToken;
-        await initializeApp(savedToken);
-      }
+      const t = localStorage.getItem('github-token');
+      if (t) { tokenInput.value = t; await initializeApp(t); }
     };
 
     async function initializeApp(token) {
@@ -136,30 +89,98 @@
     }
 
     async function loadTags(token) {
-      baseVersionSelect.disabled = true;
       toggleSpinner('base-version-spinner', true);
-      try {
-        const h = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const res = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers: h });
-        const tags = await res.json();
-        baseVersionSelect.innerHTML = '<option value="">Select Version</option>';
-        tags.forEach(t => { const o = document.createElement('option'); o.value = t.name; o.textContent = t.name; baseVersionSelect.appendChild(o); });
-        if (localStorage.getItem('base-version')) baseVersionSelect.value = localStorage.getItem('base-version');
-        baseVersionSelect.disabled = false;
-      } catch (e) { logDebug("Tag Error"); }
-      finally { toggleSpinner('base-version-spinner', false); }
+      const h = { Authorization: `token ${token}` };
+      const res = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers: h });
+      const tags = await res.json();
+      baseVersionSelect.innerHTML = '<option value="">Select Version</option>';
+      tags.forEach(t => { const o = document.createElement('option'); o.value = t.name; o.textContent = t.name; baseVersionSelect.appendChild(o); });
+      baseVersionSelect.value = localStorage.getItem('base-version') || '';
+      baseVersionSelect.disabled = false;
+      toggleSpinner('base-version-spinner', false);
     }
 
     async function loadBranches(token) {
-      branchSelect.disabled = true;
       toggleSpinner('branch-spinner', true);
-      try {
-        const h = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const res = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=100`, { headers: h });
-        const branches = await res.json();
-        branchSelect.innerHTML = '<option value="">Select Branch</option>';
-        branches.forEach(b => { const o = document.createElement('option'); o.value = b.name; o.textContent = b.name; branchSelect.appendChild(o); });
-        if (localStorage.getItem('target-branch')) branchSelect.value = localStorage.getItem('target-branch');
-        branchSelect.disabled = false;
-      } catch (e) { logDebug("Branch Error"); }
-      finally
+      const h = { Authorization: `token ${token}` };
+      const res = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/branches?per_page=100`, { headers: h });
+      const branches = await res.json();
+      branchSelect.innerHTML = '<option value="">Select Branch</option>';
+      branches.forEach(b => { const o = document.createElement('option'); o.value = b.name; o.textContent = b.name; branchSelect.appendChild(o); });
+      branchSelect.value = localStorage.getItem('target-branch') || '';
+      branchSelect.disabled = false;
+      toggleSpinner('branch-spinner', false);
+    }
+
+    document.getElementById('set-token').addEventListener('click', async () => {
+      localStorage.setItem('github-token', tokenInput.value.trim());
+      toggleSpinner('token-spinner', true);
+      await initializeApp(tokenInput.value.trim());
+      toggleSpinner('token-spinner', false);
+      document.getElementById('token-success').classList.remove('hidden');
+    });
+
+    branchSelect.addEventListener('change', () => { localStorage.setItem('target-branch', branchSelect.value); loadFiles(); });
+    baseVersionSelect.addEventListener('change', () => { localStorage.setItem('base-version', baseVersionSelect.value); });
+
+    async function loadFiles() {
+      const h = { Authorization: `token ${tokenInput.value}` };
+      const res = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branchSelect.value}`, { headers: h });
+      if (res.ok) { files = JSON.parse(atob((await res.json()).content)); renderFileList(); }
+    }
+
+    async function saveFiles() {
+      const h = { Authorization: `token ${tokenInput.value}` };
+      let sha = null;
+      const getRes = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branchSelect.value}`, { headers: h });
+      if (getRes.ok) sha = (await getRes.json()).sha;
+      const body = { message: "Update", content: btoa(JSON.stringify(files, null, 2)), branch: branchSelect.value, sha: sha };
+      await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`, { method: 'PUT', headers: h, body: JSON.stringify(body) });
+    }
+
+    function renderFileList() {
+      const list = document.getElementById('file-list');
+      list.innerHTML = '';
+      files.forEach(file => {
+        const li = document.createElement('li');
+        li.className = 'flex justify-between items-center py-1 border-b text-sm';
+        li.innerHTML = `<span class="font-mono">${file}</span><button class="text-red-500" onclick="removeFile('${file}')">Remove</button>`;
+        list.appendChild(li);
+      });
+    }
+
+    window.removeFile = async (name) => { files = files.filter(f => f !== name); await saveFiles(); renderFileList(); };
+    document.getElementById('add-file').addEventListener('click', () => document.getElementById('file-form').classList.toggle('hidden'));
+    document.getElementById('save-file').addEventListener('click', async () => { const p = document.getElementById('file-path').value.trim(); if (p) { files.push(p); await saveFiles(); renderFileList(); } });
+
+    document.getElementById('check-upstream').addEventListener('click', async () => {
+      toggleSpinner('check-spinner', true);
+      const resultsBody = document.getElementById('results-body');
+      resultsBody.innerHTML = '';
+      document.getElementById('results').classList.remove('hidden');
+      const h = { Authorization: `token ${tokenInput.value}` };
+      for (const file of files) {
+        const compRes = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${baseVersionSelect.value}...main`, { headers: h });
+        const compData = await compRes.json();
+        const isMod = compData.files.some(f => f.filename === file);
+        
+        // Generate the Compare URL
+        // If file is modified, link to the diff. If not (or doc line), link to your file.
+        const compareUrl = isMod 
+            ? `https://github.com/${OWNER}/${REPO}/compare/main...${branchSelect.value}?diff=split#diff-${btoa(file).replace(/=/g, '')}`
+            : `https://github.com/${OWNER}/${REPO}/blob/${branchSelect.value}/${file}`;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td class="border p-2 font-mono text-xs">${file}</td>
+          <td class="border p-2 text-center text-xs">${isMod ? '⚠️ Modified' : '✅ Clean'}</td>
+          <td class="border p-2 text-right text-xs">
+            <a href="${compareUrl}" target="_blank" class="text-blue-600 font-bold">Compare</a>
+          </td>`;
+        resultsBody.appendChild(row);
+      }
+      toggleSpinner('check-spinner', false);
+    });
+  </script>
+</body>
+</html>
