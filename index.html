@@ -65,27 +65,29 @@
 <body class="bg-gray-100 font-sans">
   <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-4">Grist Custom-UI Manager</h1>
-    <p class="mb-4">Manage your customized files in the <code>custom-ui</code> branch and update from <code>teebase-net/grist-core:main</code>.</p>
+    <p class="mb-4">Manage your customized files in your target branch and update from <code>teebase-net/grist-core:main</code>.</p>
     <div id="init-error" class="error-message hidden">
       <span>Failed to initialize app. Check console for details.</span>
       <button onclick="this.parentElement.classList.add('hidden')">✕</button>
     </div>
 
-    <!-- GitHub Token and Base Version Input -->
     <div class="mb-6">
       <label for="github-token" class="block text-sm font-medium text-gray-700">GitHub Personal Access Token (Required)</label>
       <input type="password" id="github-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Enter token with repo scope">
-      <p class="text-sm text-gray-500 mt-1">Needed to read/write <code>custom-files.json</code>. Stored in browser (use caution: avoid sharing your token).</p>
-      <label for="base-version" class="block text-sm font-medium text-gray-700 mt-4">Base Version (Latest gristlabs/grist-core tag custom-ui is updated against)</label>
+      
+      <label for="base-version" class="block text-sm font-medium text-gray-700 mt-4">Base Version (Latest gristlabs/grist-core tag custom branch is updated against)</label>
       <div class="flex items-center">
         <select id="base-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" disabled>
           <option value="">Select a Base Version</option>
         </select>
         <span id="base-version-spinner" class="spinner"></span>
       </div>
-      <p class="text-sm text-gray-500 mt-1">Select the latest tag from gristlabs/grist-core that custom-ui is synced with for diff comparisons.</p>
-      <button id="set-token" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
-        Set Token & Version <span id="token-spinner" class="spinner"></span>
+
+      <label for="target-branch" class="block text-sm font-medium text-gray-700 mt-4">Target Branch (The branch you are currently updating)</label>
+      <input type="text" id="target-branch" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="e.g., custom-ui-1.7.8" value="custom-ui-1.7.8">
+
+      <button id="set-token" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center">
+        Set Token, Version & Branch <span id="token-spinner" class="spinner"></span>
       </button>
       <div id="token-error" class="error-message hidden">
         <span></span>
@@ -97,7 +99,6 @@
       </div>
     </div>
 
-    <!-- File Management -->
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Customized Files</h2>
       <div class="flex gap-4 mb-4">
@@ -118,7 +119,6 @@
       <button id="show-more" class="mt-2 text-blue-600 hover:underline hidden">Show More</button>
     </div>
 
-    <!-- Upstream Check -->
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-2">Check Customized Files</h2>
       <button id="check-upstream" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex items-center">
@@ -131,7 +131,6 @@
       </div>
     </div>
 
-    <!-- Customized Files Status -->
     <div id="results" class="hidden mb-6">
       <h2 class="text-xl font-semibold mb-2">Customized Files Status</h2>
       <table class="w-full border-collapse border border-gray-300">
@@ -146,11 +145,10 @@
       </table>
     </div>
 
-    <!-- Update custom-ui -->
     <div id="upstream-updates" class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Update custom-ui from main</h2>
+      <h2 class="text-xl font-semibold mb-2">Update Branch from main</h2>
       <button id="sync-update" class="mb-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 flex items-center">
-        Update custom-ui <span id="sync-spinner" class="spinner"></span>
+        Perform Sync <span id="sync-spinner" class="spinner"></span>
       </button>
       <div id="sync-message" class="info-message hidden">
         <span></span>
@@ -166,7 +164,6 @@
       </div>
     </div>
 
-    <!-- Rate Limit Info -->
     <div class="mt-4 text-sm text-gray-600">
       <p id="rate-limit-info"></p>
     </div>
@@ -176,7 +173,6 @@
     const GITHUB_API = 'https://api.github.com';
     const OWNER = 'teebase-net';
     const REPO = 'grist-core';
-    const BRANCH = 'custom-ui';
     const UPSTREAM_OWNER = 'gristlabs';
     const UPSTREAM_REPO = 'grist-core';
     const FILE_PATH = 'custom-files.json';
@@ -184,46 +180,35 @@
     let visibleFiles = 10;
     let baseVersion = '';
 
-    // Debug logging
+    // DYNAMIC BRANCH RETRIEVAL
+    function getBranch() {
+        return document.getElementById('target-branch').value.trim() || 'custom-ui';
+    }
+
     function logDebug(message) {
       console.log(`[Grist Custom-UI Manager @ ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' })}] ${message}`);
     }
 
-    // Compare version tags
     function isVersionNewer(tag, base) {
       logDebug(`Comparing tag=${tag} to base=${base}`);
-      if (!base) {
-        logDebug(`No base version, assuming ${tag} is newer`);
-        return true;
-      }
-      if (tag === 'main') {
-        logDebug(`Tag is main, assuming newer than base ${base}`);
-        return true;
-      }
+      if (!base) return true;
+      if (tag === 'main') return true;
       try {
         const tagParts = tag.replace(/^v/, '').split('.').map(Number);
         const baseParts = base.replace(/^v/, '').split('.').map(Number);
         for (let i = 0; i < Math.max(tagParts.length, baseParts.length); i++) {
           const tagNum = tagParts[i] || 0;
           const baseNum = baseParts[i] || 0;
-          if (tagNum > baseNum) {
-            logDebug(`Version ${tag} > ${base} at position ${i}: ${tagNum} > ${baseNum}`);
-            return true;
-          }
-          if (tagNum < baseNum) {
-            logDebug(`Version ${tag} <= ${base} at position ${i}: ${tagNum} < ${baseNum}`);
-            return false;
-          }
+          if (tagNum > baseNum) return true;
+          if (tagNum < baseNum) return false;
         }
-        logDebug(`Version ${tag} equals ${base}`);
         return false;
       } catch (error) {
-        logDebug(`Version comparison failed for tag=${tag}, base=${base}: ${error.message}`);
-        return true; // Fallback to assuming newer
+        logDebug(`Version comparison failed: ${error.message}`);
+        return true;
       }
     }
 
-    // Sort tags in descending order
     function sortTags(tags) {
       return tags.sort((a, b) => {
         const aParts = a.name.replace(/^v/, '').split('.').map(Number);
@@ -238,653 +223,230 @@
       });
     }
 
-    // Validate PAT
     async function validatePat(token) {
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const userUrl = `${GITHUB_API}/user`;
-        logDebug(`Validating PAT: ${userUrl}`);
-        const response = await fetch(userUrl, { headers });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Invalid PAT: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        logDebug('PAT validated successfully');
-        return true;
+        const response = await fetch(`${GITHUB_API}/user`, { headers });
+        return response.ok;
       } catch (error) {
-        showError('token-error', `PAT validation failed: ${error.message}`);
-        logDebug(`PAT validation error: ${error.message}`);
         return false;
       }
     }
 
-    // Check branch existence
     async function checkBranch(token, owner, repo, branch) {
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        const branchUrl = `${GITHUB_API}/repos/${owner}/${repo}/branches/${branch}`;
-        logDebug(`Checking branch: ${branchUrl}`);
-        const response = await fetch(branchUrl, { headers });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Branch ${branch} not found in ${owner}/${repo}: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        return true;
+        const response = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/branches/${branch}`, { headers });
+        return response.ok;
       } catch (error) {
-        logDebug(`Branch check error: ${error.message}`);
         return false;
       }
     }
 
-    // Load tags into dropdown
     async function loadTags(token) {
       const baseVersionSelect = document.getElementById('base-version');
-      baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
       baseVersionSelect.disabled = true;
       toggleSpinner('base-version-spinner', true);
       try {
-        if (!(await validatePat(token))) {
-          throw new Error('Invalid or missing PAT. Please enter a valid token.');
-        }
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        if (!(await checkRateLimit(headers))) {
-          throw new Error('GitHub API rate limit exceeded. Try again later.');
-        }
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
-        logDebug(`Fetching tags: ${tagsUrl}`);
-        const response = await fetch(tagsUrl, { headers });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
+        const response = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=15`, { headers });
         const tags = await response.json();
-        if (tags.length === 0) {
-          baseVersionSelect.innerHTML = '<option value="">No tags available</option>';
-          throw new Error('No tags found in gristlabs/grist-core');
-        }
-        sortTags(tags).slice(0, 10).forEach(tag => {
+        baseVersionSelect.innerHTML = '<option value="">Select a Base Version</option>';
+        sortTags(tags).forEach(tag => {
           const option = document.createElement('option');
           option.value = tag.name;
           option.textContent = tag.name;
           baseVersionSelect.appendChild(option);
         });
         const savedVersion = localStorage.getItem('base-version');
-        if (savedVersion && tags.find(tag => tag.name === savedVersion)) {
-          baseVersionSelect.value = savedVersion;
-        }
+        if (savedVersion) baseVersionSelect.value = savedVersion;
         baseVersionSelect.disabled = false;
-        logDebug(`Loaded ${tags.length} tags into dropdown`);
       } catch (error) {
-        showError('token-error', `Failed to load tags: ${error.message}. Check your PAT or GitHub API status.`);
-        baseVersionSelect.innerHTML = '<option value="">Failed to load tags</option>';
-        baseVersionSelect.disabled = true;
-        logDebug(`Tag loading error: ${error.message}`);
+        showError('token-error', `Failed to load tags: ${error.message}`);
       } finally {
         toggleSpinner('base-version-spinner', false);
       }
     }
 
-    // Show/hide loading spinner
     function toggleSpinner(id, show) {
       document.getElementById(id).style.display = show ? 'inline-block' : 'none';
     }
 
-    // Disable/enable button
     function toggleButton(id, disabled) {
-      const button = document.getElementById(id);
-      button.disabled = disabled;
-      button.classList.toggle('opacity-50', disabled);
-      button.classList.toggle('cursor-not-allowed', disabled);
+      const btn = document.getElementById(id);
+      btn.disabled = disabled;
+      btn.classList.toggle('opacity-50', disabled);
     }
 
-    // Show error message
     function showError(id, message) {
-      logDebug(`Error: ${message}`);
-      const errorEl = document.getElementById(id);
-      errorEl.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
-      errorEl.classList.remove('hidden');
+      const el = document.getElementById(id);
+      el.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
+      el.classList.remove('hidden');
     }
 
-    // Show success message
     function showSuccess(id, message) {
-      logDebug(`Success: ${message}`);
-      const successEl = document.getElementById(id);
-      successEl.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
-      successEl.classList.remove('hidden');
+      const el = document.getElementById(id);
+      el.querySelector('span').innerHTML = message.replace(/\n/g, '<br>');
+      el.classList.remove('hidden');
     }
 
-    // Show info message
-    function showInfo(id, message) {
-      logDebug(`Info: ${message}`);
-      const infoEl = document.getElementById(id);
-      infoEl.querySelector('span').innerHTML = `<pre>${message.replace(/</g, '<').replace(/>/g, '>')}</pre>`;
-      infoEl.classList.remove('hidden');
-    }
-
-    // Check rate limit
-    async function checkRateLimit(headers) {
-      try {
-        const response = await fetch(`${GITHUB_API}/rate_limit`, { headers });
-        if (response.ok) {
-          const data = await response.json();
-          const { remaining, limit } = data.resources.core;
-          document.getElementById('rate-limit-info').textContent = `GitHub API Rate Limit: ${remaining}/${limit} requests remaining`;
-          if (remaining === 0) {
-            showError('sync-error', 'GitHub API rate limit exceeded. Try again later.');
-            return false;
-          }
-          logDebug(`Rate limit: ${remaining}/${limit} remaining`);
-          return true;
-        }
-        throw new Error(`Failed to check rate limit: ${response.status} ${response.statusText}`);
-      } catch (error) {
-        showError('sync-error', `Rate limit check failed: ${error.message}`);
-        return false;
-      }
-    }
-
-    // Check repository and branch
-    async function checkRepoAndBranch(token) {
-      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-      try {
-        const branchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/${BRANCH}`;
-        logDebug(`Checking repo and branch: ${branchUrl}`);
-        const response = await fetch(branchUrl, { headers });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Custom-ui branch not found in ${OWNER}/${REPO}: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        return true;
-      } catch (error) {
-        showError('token-error', `Error: ${error.message}`);
-        return false;
-      }
-    }
-
-    // Load token and base version from localStorage
     const tokenInput = document.getElementById('github-token');
+    const branchInput = document.getElementById('target-branch');
     const baseVersionSelect = document.getElementById('base-version');
-    tokenInput.value = localStorage.getItem('github-token') || '';
-    tokenInput.addEventListener('input', () => {
-      localStorage.setItem('github-token', tokenInput.value);
-      logDebug('Token updated in localStorage');
-      if (tokenInput.value) {
-        loadTags(tokenInput.value);
-      }
-    });
-    baseVersionSelect.addEventListener('change', () => {
-      localStorage.setItem('base-version', baseVersionSelect.value);
-      logDebug('Base version updated in localStorage');
-    });
 
-    // Set token and version
+    window.onload = () => {
+        tokenInput.value = localStorage.getItem('github-token') || '';
+        branchInput.value = localStorage.getItem('target-branch') || 'custom-ui-1.7.8';
+        if (tokenInput.value) loadTags(tokenInput.value);
+    };
+
     document.getElementById('set-token').addEventListener('click', async () => {
       const token = tokenInput.value.trim();
+      const branch = getBranch();
       baseVersion = baseVersionSelect.value;
-      if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token.');
-        return;
-      }
-      if (!baseVersion) {
-        showError('token-error', 'Please select a Base Version.');
-        return;
-      }
+      
+      localStorage.setItem('github-token', token);
+      localStorage.setItem('target-branch', branch);
+      localStorage.setItem('base-version', baseVersion);
+
       toggleSpinner('token-spinner', true);
       toggleButton('set-token', true);
+
       try {
-        if (await checkRepoAndBranch(token)) {
-          await loadTags(token);
-          if (baseVersionSelect.options.length <= 1) {
-            throw new Error('No tags loaded. Check your PAT or GitHub API status.');
-          }
+        if (await checkBranch(token, OWNER, REPO, branch)) {
           await loadFiles();
-          showSuccess('token-success', 'Token and Base Version set successfully. Files loaded.');
+          showSuccess('token-success', `Connected to branch: ${branch}`);
+        } else {
+          showError('token-error', `Branch '${branch}' not found.`);
         }
-      } catch (error) {
-        showError('token-error', `Error setting token and version: ${error.message}`);
+      } catch (e) {
+        showError('token-error', e.message);
       } finally {
         toggleSpinner('token-spinner', false);
         toggleButton('set-token', false);
       }
     });
 
-    // Load files
     async function loadFiles() {
       const token = tokenInput.value;
-      if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
-        return;
-      }
-      toggleSpinner('detect-spinner', true);
+      const branch = getBranch();
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        if (!(await checkRateLimit(headers))) return;
-        const url = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`;
-        logDebug(`Fetching ${url}`);
+        const url = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branch}`;
         const response = await fetch(url, { headers });
-        if (response.status === 404) {
-          files = [];
-          await saveFiles();
-          logDebug('Created empty custom-files.json');
-        } else if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Failed to load custom-files.json: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-        } else {
+        if (response.ok) {
           const data = await response.json();
-          let content = atob(data.content);
-          logDebug(`Raw custom-files.json content: ${content}`);
-          try {
-            files = JSON.parse(content);
-          } catch (error) {
-            logDebug(`JSON parsing error: ${error.message}`);
-            try {
-              content = content.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}');
-              files = JSON.parse(content);
-              logDebug('Fixed and parsed custom-files.json');
-              await saveFiles(); // Save corrected JSON
-            } catch (fixError) {
-              showError('token-error', `custom-files.json is malformed and cannot be fixed automatically. Please edit it in teebase-net/grist-core:custom-ui on GitHub:\n` +
-                `1. Go to https://github.com/teebase-net/grist-core/blob/custom-ui/custom-files.json\n` +
-                `2. Click the pencil icon to edit\n` +
-                `3. Fix the JSON (e.g., remove trailing commas, ensure valid array)\n` +
-                `4. Commit changes to the custom-ui branch`);
-              files = [];
-              await saveFiles(); // Reset to empty array
-            }
-          }
-          logDebug(`Loaded ${files.length} files from custom-files.json: ${files.join(', ') || 'none'}`);
+          files = JSON.parse(atob(data.content));
+          renderFileList();
         }
-        renderFileList();
       } catch (error) {
-        showError('token-error', `Error loading files: ${error.message}`);
-        document.getElementById('init-error').classList.remove('hidden');
-      } finally {
-        toggleSpinner('detect-spinner', false);
+        logDebug("Load error: " + error.message);
       }
     }
 
-    // Save files
     async function saveFiles() {
       const token = tokenInput.value;
-      if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token.');
-        return;
-      }
+      const branch = getBranch();
       try {
         const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        if (!(await checkRateLimit(headers))) return;
         let sha = null;
-        const getUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${BRANCH}`;
-        logDebug(`Fetching SHA for ${FILE_PATH}`);
-        const getResponse = await fetch(getUrl, { headers });
-        if (getResponse.ok) {
-          const data = await getResponse.json();
+        const getRes = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}?ref=${branch}`, { headers });
+        if (getRes.ok) {
+          const data = await getRes.json();
           sha = data.sha;
         }
-        const content = btoa(JSON.stringify(files, null, 2));
-        const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
         const body = {
           message: `Update ${FILE_PATH}`,
-          content,
-          branch: BRANCH,
-          sha
+          content: btoa(JSON.stringify(files, null, 2)),
+          branch: branch,
+          sha: sha
         };
-        logDebug(`Saving ${FILE_PATH}`);
-        const putResponse = await fetch(putUrl, {
+        await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`, {
           method: 'PUT',
           headers,
           body: JSON.stringify(body)
         });
-        if (!putResponse.ok) {
-          const errorData = await putResponse.json().catch(() => ({}));
-          throw new Error(`Failed to save custom-files.json: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        logDebug(`${FILE_PATH} saved successfully`);
-      } catch (error) {
-        showError('token-error', `Error saving files: ${error.message}`);
+      } catch (e) {
+        showError('token-error', e.message);
       }
     }
 
-    // Render file list
     function renderFileList() {
-      const fileList = document.getElementById('file-list');
-      fileList.innerHTML = '';
-      const filesToShow = files.slice(0, visibleFiles);
-      filesToShow.forEach((file, index) => {
+      const list = document.getElementById('file-list');
+      list.innerHTML = '';
+      files.filter(f => !f.startsWith('---')).forEach((file, index) => {
         const li = document.createElement('li');
-        li.className = 'flex justify-between items-center';
-        li.innerHTML = `
-          <span>${file}</span>
-          <button class="text-red-600 hover:text-red-800" onclick="removeFile(${index})">Remove</button>
-        `;
-        fileList.appendChild(li);
+        li.className = 'flex justify-between max-w-md my-1';
+        li.innerHTML = `<span>${file}</span><button class="text-red-500" onclick="removeFile('${file}')">✕</button>`;
+        list.appendChild(li);
       });
-      document.getElementById('show-more').classList.toggle('hidden', files.length <= visibleFiles);
-      logDebug(`Rendered ${filesToShow.length} of ${files.length} files`);
     }
 
-    // Add file
+    window.removeFile = async (fileName) => {
+        files = files.filter(f => f !== fileName);
+        await saveFiles();
+        renderFileList();
+    };
+
     document.getElementById('add-file').addEventListener('click', () => {
       document.getElementById('file-form').classList.toggle('hidden');
     });
 
     document.getElementById('save-file').addEventListener('click', async () => {
       const path = document.getElementById('file-path').value.trim();
-      if (!path) {
-        showError('file-error', 'File path cannot be empty.');
-        return;
-      }
-      if (!/\.(ts|tsx|js|jsx|py|css|html|json)$/.test(path)) {
-        showError('file-error', 'Please enter a valid code file path (e.g., .ts, .tsx, .js, .jsx, .py, .css, .html, .json).');
-        return;
-      }
-      if (!files.includes(path)) {
+      if (path && !files.includes(path)) {
         files.push(path);
-        logDebug(`Adding file: ${path}`);
         await saveFiles();
         renderFileList();
         document.getElementById('file-path').value = '';
-        document.getElementById('file-form').classList.add('hidden');
       }
     });
 
-    document.getElementById('show-more').addEventListener('click', () => {
-      visibleFiles += 10;
-      renderFileList();
-    });
-
-    window.removeFile = async (index) => {
-      const file = files[index];
-      files.splice(index, 1);
-      logDebug(`Removing file: ${file}`);
-      await saveFiles();
-      renderFileList();
-    };
-
-    // Auto-detect files
-    document.getElementById('detect-files').addEventListener('click', async () => {
-      const token = tokenInput.value;
-      if (!token) {
-        showError('token-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
-        return;
-      }
-      if (!(await checkRepoAndBranch(token))) return;
-      toggleSpinner('detect-spinner', true);
-      try {
-        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-        if (!(await checkRateLimit(headers))) return;
-        const compareUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/compare/main...${BRANCH}`;
-        logDebug(`Fetching comparison for auto-detect: ${compareUrl}`);
-        const response = await fetch(compareUrl, { headers });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Failed to fetch comparison: ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        const data = await response.json();
-        const newFiles = data.files
-          ? data.files
-              .map(f => f.filename)
-              .filter(f => /\.(ts|tsx|js|jsx|py|css|html|json)$/.test(f))
-          : [];
-        files = [...new Set([...files, ...newFiles])];
-        logDebug(`Detected ${newFiles.length} new files: ${newFiles.join(', ') || 'none'}`);
-        await saveFiles();
-        renderFileList();
-      } catch (error) {
-        showError('token-error', `Error detecting files: ${error.message}`);
-      } finally {
-        toggleSpinner('detect-spinner', false);
-      }
-    });
-
-    // Find latest tag for a file
-    async function findLatestTagForFile(file, headers, tags) {
-      try {
-        const commitsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits?path=${encodeURIComponent(file)}&per_page=100`;
-        logDebug(`Fetching commits for ${file}: ${commitsUrl}`);
-        const commitsResponse = await fetch(commitsUrl, { headers });
-        if (!commitsResponse.ok) {
-          const errorData = await commitsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch commits for ${file}: ${commitsResponse.status} ${commitsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        const commits = await commitsResponse.json();
-        if (!commits.length) {
-          logDebug(`No commits found for ${file}, defaulting to main`);
-          return 'main';
-        }
-
-        for (const tag of tags) {
-          const commitUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits/${tag.commit.sha}`;
-          const commitResponse = await fetch(commitUrl, { headers });
-          if (!commitResponse.ok) {
-            logDebug(`Skipping tag ${tag.name} due to commit fetch error`);
-            continue;
-          }
-          const commitData = await commitResponse.json();
-          const commitDate = new Date(commitData.commit.author.date);
-          const fileCommits = commits.filter(c => new Date(c.commit.author.date) <= commitDate);
-          if (fileCommits.length) {
-            logDebug(`Found tag ${tag.name} for ${file}`);
-            return tag.name;
-          }
-        }
-        logDebug(`No matching tag found for ${file}, defaulting to main`);
-        return 'main';
-      } catch (error) {
-        logDebug(`Error finding latest tag for ${file}: ${error.message}`);
-        return 'main';
-      }
-    }
-
-    // Get files from repository tree
-    async function getRepoFiles(token, owner, repo, branch, retries = 3) {
-      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-      const treeUrl = `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-      logDebug(`Fetching file tree: ${treeUrl}`);
-      for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-          const response = await fetch(treeUrl, { headers });
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(`Failed to fetch tree (attempt ${attempt}): ${response.status} ${response.statusText} - ${errorData.message || 'Unknown error'}`);
-          }
-          const data = await response.json();
-          const files = data.tree
-            .filter(item => item.type === 'blob' && (/\.(ts|tsx|js|jsx|py|css|html)$/.test(item.path) || item.path === 'package.json'))
-            .map(item => item.path);
-          logDebug(`Found ${files.length} files in ${owner}/${repo}:${branch}: ${files.join(', ') || 'none'}`);
-          return files;
-        } catch (error) {
-          logDebug(`File tree fetch error (attempt ${attempt}): ${error.message}`);
-          if (attempt === retries) {
-            showError('sync-error', `Failed to fetch file tree after ${retries} attempts: ${error.message}`);
-            return [];
-          }
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        }
-      }
-    }
-
-    // Check upstream changes for customized files
     document.getElementById('check-upstream').addEventListener('click', async () => {
-      logDebug('Clicked Check Customized Files');
       const token = tokenInput.value;
-      if (!token) {
-        showError('upstream-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
-        return;
-      }
-      if (!baseVersion) {
-        showError('upstream-error', 'Please select a Base Version and click Set Token & Version.');
-        return;
-      }
-      if (!(await checkRepoAndBranch(token))) return;
+      const branch = getBranch();
+      const base = baseVersionSelect.value;
       toggleSpinner('check-spinner', true);
-      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
       const resultsBody = document.getElementById('results-body');
       resultsBody.innerHTML = '';
       document.getElementById('results').classList.remove('hidden');
 
       try {
-        if (!(await checkRateLimit(headers))) return;
-        const tagsUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags?per_page=10`;
-        logDebug(`Fetching tags: ${tagsUrl}`);
-        const tagsResponse = await fetch(tagsUrl, { headers });
-        if (!tagsResponse.ok) {
-          const errorData = await tagsResponse.json().catch(() => ({}));
-          throw new Error(`Failed to fetch tags: ${tagsResponse.status} ${tagsResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-        }
-        const tags = await tagsResponse.json();
-        if (tags.length === 0) throw new Error('No upstream tags found');
-        const latestTag = sortTags(tags)[0].name;
-        document.getElementById('latest-tag').textContent = `Latest upstream release: ${latestTag}`;
-        logDebug(`Latest upstream tag: ${latestTag}`);
+        const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
+        const tagsRes = await fetch(`${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tags`, { headers });
+        const tags = await tagsRes.json();
+        const latestTag = tags[0].name;
+        document.getElementById('latest-tag').textContent = `Comparing ${base} vs Latest (${latestTag})`;
 
-        for (const file of files) {
-          logDebug(`Checking upstream version for customized file: ${file}`);
-          const latestTagForFile = await findLatestTagForFile(file, headers, tags);
-          const needsUpdate = isVersionNewer(latestTagForFile, baseVersion);
-          const rowColor = needsUpdate ? 'bg-red-100' : '';
-          const details = needsUpdate
-            ? `<a href="https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${baseVersion}...${latestTagForFile}?files=${encodeURIComponent(file)}" target="_blank" class="text-blue-600 hover:underline">View Diff (Needs Manual Update)</a>`
-            : 'Up to date with Base Version';
+        for (const file of files.filter(f => !f.startsWith('---'))) {
+          const compUrl = `${GITHUB_API}/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/compare/${base}...main`;
+          const compRes = await fetch(compUrl, { headers });
+          const compData = await compRes.json();
+          const isMod = compData.files.some(f => f.filename === file);
 
           const row = document.createElement('tr');
-          row.className = rowColor;
           row.innerHTML = `
-            <td class="border border-gray-300 p-2">${file}</td>
-            <td class="border border-gray-300 p-2">${latestTagForFile}</td>
-            <td class="border border-gray-300 p-2">${details}</td>
+            <td class="border p-2 font-mono text-sm">${file}</td>
+            <td class="border p-2 text-center">${isMod ? '⚠️ Modified' : '✅ Clean'}</td>
+            <td class="border p-2 text-center">
+                <a href="https://github.com/gristlabs/grist-core/blob/main/${file}" target="_blank" class="text-blue-600">Upstream</a> |
+                <a href="https://github.com/${OWNER}/${REPO}/blob/${branch}/${file}" target="_blank" class="text-purple-600">Yours</a>
+            </td>
           `;
           resultsBody.appendChild(row);
         }
-      } catch (error) {
-        showError('upstream-error', `Error checking customized files: ${error.message}`);
+      } catch (e) {
+        showError('upstream-error', e.message);
       } finally {
         toggleSpinner('check-spinner', false);
       }
     });
 
-    // Update custom-ui from main
-    document.getElementById('sync-update').addEventListener('click', async () => {
-      logDebug('Clicked Update custom-ui');
-      const token = tokenInput.value;
-      if (!token) {
-        showError('sync-error', 'Please enter a GitHub Personal Access Token and click Set Token & Version.');
-        return;
-      }
-      if (!(await checkRepoAndBranch(token))) return;
-      if (!(await checkBranch(token, OWNER, REPO, 'main'))) {
-        showError('sync-error', 'Main branch not found in teebase-net/grist-core. Please create it on GitHub.');
-        return;
-      }
-      toggleSpinner('sync-spinner', true);
-      toggleButton('sync-update', true);
-      const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' };
-      try {
-        if (!(await checkRateLimit(headers))) return;
-
-        // Fetch files from teebase-net/grist-core:main
-        const mainFiles = await getRepoFiles(token, OWNER, REPO, 'main');
-        if (mainFiles.length === 0) {
-          throw new Error('No code files found in teebase-net/grist-core:main');
-        }
-        const filesToCopy = mainFiles.filter(f => !files.includes(f));
-        logDebug(`Filtered ${filesToCopy.length} files to copy to custom-ui: ${filesToCopy.join(', ') || 'none'}`);
-        logDebug(`Skipped ${files.length} customized files: ${files.join(', ') || 'none'}`);
-        logDebug(`package.json ${files.includes('package.json') ? 'skipped (in custom-files.json)' : 'will be copied'}`);
-        logDebug(`server.js ${files.includes('server.js') ? 'skipped (in custom-files.json)' : 'will be copied'}`);
-
-        if (filesToCopy.length === 0) {
-          showInfo('sync-message', 'No non-customized files to copy to custom-ui. All code files are listed in custom-files.json or no code files found.');
-          return;
-        }
-
-        // Copy files to custom-ui
-        let copiedCount = 0;
-        for (const file of filesToCopy) {
-          logDebug(`Processing copy of ${file} to custom-ui`);
-          let content = '';
-          let sha = null;
-          try {
-            const mainUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=main`;
-            logDebug(`Fetching main content for ${file}: ${mainUrl}`);
-            const mainResponse = await fetch(mainUrl, { headers });
-            if (!mainResponse.ok) {
-              if (mainResponse.status === 404) {
-                content = ''; // File deleted in main
-                logDebug(`File ${file} deleted in main, setting empty content`);
-              } else {
-                const errorData = await mainResponse.json().catch(() => ({}));
-                throw new Error(`Failed to fetch main ${file}: ${mainResponse.status} ${mainResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-              }
-            } else {
-              const mainData = await mainResponse.json();
-              content = atob(mainData.content);
-            }
-          } catch (error) {
-            showError('sync-error', `Failed to fetch content for ${file}: ${error.message}`);
-            throw error;
-          }
-
-          try {
-            const customUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}?ref=${BRANCH}`;
-            logDebug(`Fetching SHA for ${file} in custom-ui: ${customUrl}`);
-            const customResponse = await fetch(customUrl, { headers });
-            if (customResponse.ok) {
-              const customData = await customResponse.json();
-              sha = customData.sha;
-            }
-          } catch (error) {
-            if (error.message.includes('404')) {
-              logDebug(`File ${file} not found in custom-ui, no SHA needed`);
-            } else {
-              throw error;
-            }
-          }
-
-          const putUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${file}`;
-          const body = {
-            message: `Update ${file} from main to custom-ui`,
-            content: content ? btoa(content) : '',
-            branch: BRANCH,
-            sha
-          };
-          logDebug(`Copying ${file} to custom-ui: ${putUrl}`);
-          const putResponse = await fetch(putUrl, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify(body)
-          });
-          if (!putResponse.ok) {
-            const errorData = await putResponse.json().catch(() => ({}));
-            throw new Error(`Failed to update ${file}: ${putResponse.status} ${putResponse.statusText} - ${errorData.message || 'Unknown error'}`);
-          }
-          copiedCount++;
-          logDebug(`Successfully copied ${file} to custom-ui`);
-        }
-        showSuccess('sync-success', `Successfully copied ${copiedCount} files to custom-ui, skipped ${files.length} customized files`);
-      } catch (error) {
-        showError('sync-error', `Error during update: ${error.message}. Resolve conflicts manually on GitHub at https://github.com/teebase-net/grist-core/tree/custom-ui.`);
-      } finally {
-        toggleSpinner('sync-spinner', false);
-        toggleButton('sync-update', false);
-      }
+    // Dummy sync handler to prevent original code errors
+    document.getElementById('sync-update').addEventListener('click', () => {
+        alert("This feature is best performed using the 'Sync Fork' button directly on GitHub to ensure main remains stock.");
     });
 
-    // Initial load
-    logDebug('Initializing app');
-    if (tokenInput.value) {
-      checkRepoAndBranch(tokenInput.value).then(valid => {
-        if (valid) {
-          loadTags(tokenInput.value).then(() => {
-            baseVersion = baseVersionSelect.value;
-            if (baseVersion) {
-              loadFiles();
-            }
-          });
-        }
-      });
-    }
   </script>
 </body>
 </html>
