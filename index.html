@@ -11,7 +11,7 @@
     .status-msg { padding: 12px; border-radius: 6px; margin-top: 10px; display: none; font-weight: bold; font-size: 0.85rem; }
     .err { display: block; background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; }
     .ok { display: block; background: #d1fae5; border: 1px solid #10b981; color: #065f46; }
-    .locked-section { background-color: #f1f5f9; pointer-events: none; opacity: 0.6; border: 2px solid #cbd5e1 !important; }
+    .locked-section { background-color: #f1f5f9 !important; pointer-events: none; opacity: 0.6; border: 2px solid #cbd5e1 !important; }
   </style>
 </head>
 <body class="bg-slate-100 p-4 md:p-8 text-slate-900 font-sans">
@@ -62,10 +62,7 @@
 
     <div id="section-workspace" class="hidden">
       <div class="border-t-4 border-slate-100 pt-8 mb-8">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-black text-slate-800">Tracked UI Files (<span id="file-count">0</span>)</h2>
-            <button onclick="location.reload()" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 uppercase">Reset</button>
-        </div>
+          <h2 class="text-xl font-black text-slate-800 mb-6">Tracked UI Files (<span id="file-count">0</span>)</h2>
         <ul id="ui-file-list" class="bg-white border-2 border-slate-100 rounded-xl p-4 space-y-2 font-mono text-xs shadow-inner max-h-48 overflow-y-auto"></ul>
       </div>
 
@@ -80,7 +77,7 @@
               <tr>
                 <th class="p-4 text-left uppercase">File Path</th>
                 <th class="p-4 text-center border-x border-slate-700 uppercase">Your Work</th>
-                <th class="p-4 text-center border-r border-slate-700 uppercase">GristLabs Status</th>
+                <th class="p-4 text-center border-r border-slate-700 uppercase">Upstream Status</th>
                 <th class="p-4 text-right uppercase">Advice</th>
               </tr>
             </thead>
@@ -96,27 +93,18 @@
     let session = { token: '', files: [] };
     const get = (id) => document.getElementById(id);
     
-    // Identifies legitimate file paths while ignoring documentation headers
     const isFile = (str) => {
         if (!str || typeof str !== 'string') return false;
         const s = str.trim();
         return s.length > 0 && !s.startsWith('-') && !s.includes('PURPOSE:') && s.includes('.');
     };
 
-    // Cleans dirty JSON (like trailing commas) before parsing
-    const robustJSONParse = (str) => {
-        try {
-            // Remove trailing commas from arrays/objects using regex
-            const clean = str.replace(/,[ \t\r\n]*([\]}])/g, '$1');
-            return JSON.parse(clean);
-        } catch (e) {
-            throw new Error("JSON Syntax Error: " + e.message);
-        }
-    };
-
     async function callGitHub(path) {
         const r = await fetch(`https://api.github.com${path}`, {
-            headers: { 'Authorization': `token ${session.token}`, 'Accept': 'application/vnd.github.v3+json' }
+            headers: { 
+                'Authorization': `token ${session.token}`, 
+                'Accept': 'application/vnd.github.v3+json' 
+            }
         });
         if (!r.ok) {
             const err = await r.json();
@@ -134,12 +122,11 @@
                 callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/tags?per_page=100`),
                 callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/branches?per_page=100`)
             ]);
+            
             const tOptions = tags.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
             const bOptions = branches.map(b => `<option value="${b.name}">${b.name}</option>`).join('');
+            
             get('select-tag-old').innerHTML = tOptions; get('select-tag-new').innerHTML = tOptions;
             get('select-branch-old').innerHTML = bOptions; get('select-branch-new').innerHTML = bOptions;
-            get('section-lock').classList.remove('opacity-40', 'pointer-events-none');
-            get('section-auth').classList.add('locked-section');
-        } catch (e) { alert("Auth Failed: " + e.message); }
-        finally { get('spin-auth').style.display = 'none'; }
-    });
+            
+            get('msg-auth').innerText = "
