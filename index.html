@@ -96,10 +96,22 @@
     let session = { token: '', files: [] };
     const get = (id) => document.getElementById(id);
     
+    // Identifies legitimate file paths while ignoring documentation headers
     const isFile = (str) => {
         if (!str || typeof str !== 'string') return false;
         const s = str.trim();
-        return s.length > 0 && !s.startsWith('-') && s.includes('.');
+        return s.length > 0 && !s.startsWith('-') && !s.includes('PURPOSE:') && s.includes('.');
+    };
+
+    // Cleans dirty JSON (like trailing commas) before parsing
+    const robustJSONParse = (str) => {
+        try {
+            // Remove trailing commas from arrays/objects using regex
+            const clean = str.replace(/,[ \t\r\n]*([\]}])/g, '$1');
+            return JSON.parse(clean);
+        } catch (e) {
+            throw new Error("JSON Syntax Error: " + e.message);
+        }
     };
 
     async function callGitHub(path) {
@@ -131,82 +143,3 @@
         } catch (e) { alert("Auth Failed: " + e.message); }
         finally { get('spin-auth').style.display = 'none'; }
     });
-
-    get('btn-lock-scope').addEventListener('click', async () => {
-        get('spin-lock').style.display = 'inline-block';
-        const targetBr = get('select-branch-new').value;
-        try {
-            const response = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${targetBr}`);
-            
-            // DECODE BASE64 CONTENT FROM GITHUB WRAPPER
-            const decoded = decodeURIComponent(atob(response.content.replace(/\s/g, '')).split('').map(function(c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            
-            const rawArray = JSON.parse(decoded);
-            session.files = rawArray.filter(isFile).map(f => f.trim());
-            
-            get('section-workspace').classList.remove('hidden');
-            get('section-lock').classList.add('locked-section');
-            get('file-count').innerText = session.files.length;
-            renderFiles();
-        } catch (e) { 
-            console.error(e);
-            alert("Error loading " + GITHUB.configFile + ": " + e.message);
-        } finally { get('spin-lock').style.display = 'none'; }
-    });
-
-    function renderFiles() {
-        get('ui-file-list').innerHTML = session.files.length 
-            ? session.files.map(f => `<li class="border-b border-slate-50 pb-1 text-slate-700">📄 ${f}</li>`).join('') 
-            : '<li class="text-red-500 font-bold italic">No actual file paths detected in the JSON array.</li>';
-    }
-
-    get('btn-run-compare').addEventListener('click', async () => {
-        get('spin-compare').style.display = 'inline-block';
-        get('ui-results-area').classList.remove('hidden');
-        get('ui-results-body').innerHTML = '<tr><td colspan="4" class="p-8 text-center animate-pulse">Running multi-point comparison...</td></tr>';
-
-        try {
-            const bOld = get('select-branch-old').value; 
-            const bNew = get('select-branch-new').value;
-            const tOld = get('select-tag-old').value; 
-            const tNew = get('select-tag-new').value;
-
-            const [forkDiff, upstreamDiff] = await Promise.all([
-                callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/compare/${bOld}...${bNew}`),
-                callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}`)
-            ]);
-
-            get('ui-results-body').innerHTML = '';
-            session.files.forEach(path => {
-                const meChanged = forkDiff.files.some(f => f.filename === path);
-                const gristChanged = upstreamDiff.files.some(f => f.filename === path);
-                const tr = document.createElement('tr');
-                tr.className = (!gristChanged) ? "bg-emerald-50/50 border-b border-emerald-100" : "bg-white border-b";
-                
-                tr.innerHTML = `
-                    <td class="p-4 font-mono text-[11px] text-slate-600">${path}</td>
-                    <td class="p-4 text-center">
-                        <span class="font-black ${meChanged ? 'text-blue-600' : 'text-slate-300'}">
-                            ${meChanged ? '✓ PORTED' : 'PENDING'}
-                        </span>
-                    </td>
-                    <td class="p-4 text-center">
-                        <span class="px-3 py-1 rounded-full font-black tracking-tighter ${gristChanged ? 'bg-orange-100 text-orange-700' : 'bg-emerald-500 text-white'}">
-                            ${gristChanged ? '⚠️ CHANGED' : '✅ NO CHANGE'}
-                        </span>
-                    </td>
-                    <td class="p-4 text-right">
-                        ${gristChanged 
-                            ? `<a href="https://github.com/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}?diff=split" target="_blank" class="text-blue-600 font-bold hover:underline">Review Upstream Diff</a>` 
-                            : `<span class="text-emerald-700 font-black">SAFE TO OVERWRITE</span>`}
-                    </td>`;
-                get('ui-results-body').appendChild(tr);
-            });
-        } catch (e) { alert("Comparison Error: " + e.message); }
-        finally { get('spin-compare').style.display = 'none'; }
-    });
-  </script>
-</body>
-</html>
