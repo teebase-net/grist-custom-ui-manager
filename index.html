@@ -14,7 +14,7 @@
     .locked-section { background-color: #f1f5f9; pointer-events: none; opacity: 0.6; border: 2px solid #cbd5e1 !important; }
   </style>
 </head>
-<body class="bg-slate-100 p-4 md:p-8 text-slate-900">
+<body class="bg-slate-100 p-4 md:p-8 text-slate-900 font-sans">
   <div class="max-w-6xl mx-auto bg-white shadow-2xl rounded-2xl p-8 border border-slate-200">
     <h1 class="text-3xl font-black mb-8 border-b pb-4 tracking-tighter">Grist Custom-UI Manager</h1>
     
@@ -33,9 +33,9 @@
       <h2 class="text-sm font-black uppercase text-slate-600 mb-4 tracking-widest">Step 2: Version Mapping</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div class="space-y-4 border-r pr-8 border-slate-200">
-          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Custom Branches (teebase-net)</h3>
+          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Your Repo (teebase-net)</h3>
           <div>
-            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Source (Previous Customization)</label>
+            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Source (Old Custom Branch)</label>
             <select id="select-branch-old" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
           </div>
           <div>
@@ -44,7 +44,7 @@
           </div>
         </div>
         <div class="space-y-4">
-          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">GristLabs Bases (Upstream)</h3>
+          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Official Grist (gristlabs)</h3>
           <div>
             <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Old Upstream Tag</label>
             <select id="select-tag-old" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
@@ -63,8 +63,8 @@
     <div id="section-workspace" class="hidden">
       <div class="border-t-4 border-slate-100 pt-8 mb-8">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-black text-slate-800">Tracked UI Files</h2>
-            <button onclick="location.reload()" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 uppercase">Reset Config</button>
+            <h2 class="text-xl font-black text-slate-800">Tracked UI Files (<span id="file-count">0</span>)</h2>
+            <button onclick="location.reload()" class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 uppercase">Reset</button>
         </div>
         <ul id="ui-file-list" class="bg-white border-2 border-slate-100 rounded-xl p-4 space-y-2 font-mono text-xs shadow-inner max-h-48 overflow-y-auto"></ul>
       </div>
@@ -74,14 +74,14 @@
           Analyze Upgrade Portability <span id="spin-compare" class="spinner"></span>
         </button>
         
-        <div id="ui-results-area" class="mt-8 hidden">
+        <div id="ui-results-area" class="mt-8 hidden overflow-x-auto">
           <table class="w-full border-collapse bg-white rounded-xl overflow-hidden shadow-xl text-xs">
             <thead class="bg-slate-900 text-white">
               <tr>
-                <th class="p-4 text-left w-1/3 uppercase">File Path</th>
-                <th class="p-4 text-center border-x border-slate-700 uppercase">Personal Progress</th>
-                <th class="p-4 text-center border-r border-slate-700 uppercase">Upstream Stability</th>
-                <th class="p-4 text-right uppercase">Action / Advice</th>
+                <th class="p-4 text-left uppercase">File Path</th>
+                <th class="p-4 text-center border-x border-slate-700 uppercase">Your Work</th>
+                <th class="p-4 text-center border-r border-slate-700 uppercase">GristLabs Status</th>
+                <th class="p-4 text-right uppercase">Advice</th>
               </tr>
             </thead>
             <tbody id="ui-results-body"></tbody>
@@ -96,14 +96,20 @@
     let session = { token: '', files: [] };
     const get = (id) => document.getElementById(id);
     
-    // Improved logic to filter out the comments in your JSON
-    const isFile = (str) => str && !str.startsWith('---') && !str.includes('PURPOSE:') && !str.includes('WORKFLOW:') && !/^\d+\./.test(str);
+    const isFile = (str) => {
+        if (!str || typeof str !== 'string') return false;
+        const s = str.trim();
+        return s.length > 0 && !s.startsWith('-') && s.includes('.');
+    };
 
     async function callGitHub(path) {
         const r = await fetch(`https://api.github.com${path}`, {
             headers: { 'Authorization': `token ${session.token}`, 'Accept': 'application/vnd.github.v3+json' }
         });
-        if (!r.ok) throw new Error((await r.json()).message || 'GitHub error');
+        if (!r.ok) {
+            const err = await r.json();
+            throw new Error(err.message || 'GitHub error');
+        }
         return r.json();
     }
 
@@ -122,7 +128,7 @@
             get('select-branch-old').innerHTML = bOptions; get('select-branch-new').innerHTML = bOptions;
             get('section-lock').classList.remove('opacity-40', 'pointer-events-none');
             get('section-auth').classList.add('locked-section');
-        } catch (e) { alert(e.message); }
+        } catch (e) { alert("Auth Failed: " + e.message); }
         finally { get('spin-auth').style.display = 'none'; }
     });
 
@@ -130,48 +136,61 @@
         get('spin-lock').style.display = 'inline-block';
         const targetBr = get('select-branch-new').value;
         try {
-            const content = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${targetBr}`);
-            session.rawConfig = JSON.parse(atob(content.content));
-            session.files = session.rawConfig.filter(isFile).map(f => f.trim());
+            const response = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${targetBr}`);
+            
+            // DECODE BASE64 CONTENT FROM GITHUB WRAPPER
+            const decoded = decodeURIComponent(atob(response.content.replace(/\s/g, '')).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            
+            const rawArray = JSON.parse(decoded);
+            session.files = rawArray.filter(isFile).map(f => f.trim());
             
             get('section-workspace').classList.remove('hidden');
             get('section-lock').classList.add('locked-section');
+            get('file-count').innerText = session.files.length;
             renderFiles();
         } catch (e) { 
             console.error(e);
-            alert("Could not load " + GITHUB.configFile + " from branch " + targetBr);
+            alert("Error loading " + GITHUB.configFile + ": " + e.message);
         } finally { get('spin-lock').style.display = 'none'; }
     });
 
     function renderFiles() {
         get('ui-file-list').innerHTML = session.files.length 
-            ? session.files.map(f => `<li class="border-b border-slate-50 pb-1">${f}</li>`).join('') 
-            : '<li class="text-red-500 font-bold italic">No actual file paths detected. Check JSON format.</li>';
+            ? session.files.map(f => `<li class="border-b border-slate-50 pb-1 text-slate-700">📄 ${f}</li>`).join('') 
+            : '<li class="text-red-500 font-bold italic">No actual file paths detected in the JSON array.</li>';
     }
 
     get('btn-run-compare').addEventListener('click', async () => {
         get('spin-compare').style.display = 'inline-block';
         get('ui-results-area').classList.remove('hidden');
-        get('ui-results-body').innerHTML = '';
+        get('ui-results-body').innerHTML = '<tr><td colspan="4" class="p-8 text-center animate-pulse">Running multi-point comparison...</td></tr>';
 
         try {
-            const bOld = get('select-branch-old').value; const bNew = get('select-branch-new').value;
-            const tOld = get('select-tag-old').value; const tNew = get('select-tag-new').value;
+            const bOld = get('select-branch-old').value; 
+            const bNew = get('select-branch-new').value;
+            const tOld = get('select-tag-old').value; 
+            const tNew = get('select-tag-new').value;
 
             const [forkDiff, upstreamDiff] = await Promise.all([
                 callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/compare/${bOld}...${bNew}`),
                 callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}`)
             ]);
 
+            get('ui-results-body').innerHTML = '';
             session.files.forEach(path => {
                 const meChanged = forkDiff.files.some(f => f.filename === path);
                 const gristChanged = upstreamDiff.files.some(f => f.filename === path);
                 const tr = document.createElement('tr');
                 tr.className = (!gristChanged) ? "bg-emerald-50/50 border-b border-emerald-100" : "bg-white border-b";
+                
                 tr.innerHTML = `
-                    <td class="p-4 font-mono text-[10px] text-slate-600">${path}</td>
-                    <td class="p-4 text-center font-black ${meChanged ? 'text-blue-600' : 'text-slate-300'}">
-                        ${meChanged ? 'PORTED' : 'PENDING'}
+                    <td class="p-4 font-mono text-[11px] text-slate-600">${path}</td>
+                    <td class="p-4 text-center">
+                        <span class="font-black ${meChanged ? 'text-blue-600' : 'text-slate-300'}">
+                            ${meChanged ? '✓ PORTED' : 'PENDING'}
+                        </span>
                     </td>
                     <td class="p-4 text-center">
                         <span class="px-3 py-1 rounded-full font-black tracking-tighter ${gristChanged ? 'bg-orange-100 text-orange-700' : 'bg-emerald-500 text-white'}">
@@ -180,8 +199,8 @@
                     </td>
                     <td class="p-4 text-right">
                         ${gristChanged 
-                            ? `<a href="https://github.com/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}?diff=split" target="_blank" class="text-blue-600 font-bold hover:underline">Review Upstream</a>` 
-                            : `<span class="text-emerald-700 font-black">SAFE TO COPY</span>`}
+                            ? `<a href="https://github.com/${GITHUB.upstream}/${GITHUB.repo}/compare/${tOld}...${tNew}?diff=split" target="_blank" class="text-blue-600 font-bold hover:underline">Review Upstream Diff</a>` 
+                            : `<span class="text-emerald-700 font-black">SAFE TO OVERWRITE</span>`}
                     </td>`;
                 get('ui-results-body').appendChild(tr);
             });
