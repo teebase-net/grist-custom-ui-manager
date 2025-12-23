@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Grist Custom-UI Manager</title>
+  <title>Grist Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .spinner { display: none; border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 18px; height: 18px; animation: spin 1s linear infinite; margin-left: 10px; }
@@ -14,15 +14,15 @@
     .locked-section { background-color: #f1f5f9 !important; pointer-events: none; opacity: 0.6; border: 2px solid #cbd5e1 !important; }
   </style>
 </head>
-<body class="bg-slate-100 p-4 md:p-8 text-slate-900 font-sans">
+<body class="bg-slate-100 p-8 text-slate-900">
   <div class="max-w-6xl mx-auto bg-white shadow-2xl rounded-2xl p-8 border border-slate-200">
-    <h1 class="text-3xl font-black mb-8 border-b pb-4 tracking-tighter">Grist Custom-UI Manager</h1>
+    <h1 class="text-3xl font-black mb-8 border-b pb-4 uppercase tracking-tighter">Grist Upgrade Manager</h1>
     
     <div id="section-auth" class="mb-8 p-6 border-4 border-blue-200 rounded-xl bg-blue-50">
       <h2 class="text-sm font-black uppercase text-blue-700 mb-4 tracking-widest">Step 1: Access Control</h2>
-      <div class="flex flex-col md:flex-row gap-4">
-        <input type="password" id="token-input" class="flex-1 p-3 border-2 rounded-lg border-slate-300 outline-none focus:border-blue-500 shadow-sm" placeholder="GitHub Access Token">
-        <button id="btn-verify-token" class="bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-8 rounded-lg flex items-center justify-center transition-all shadow-md">
+      <div class="flex gap-4">
+        <input type="password" id="token-input" class="flex-1 p-3 border-2 rounded-lg border-slate-300 outline-none" placeholder="GitHub Access Token">
+        <button id="btn-verify-token" class="bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-8 rounded-lg flex items-center">
           VERIFY TOKEN <span id="spin-auth" class="spinner"></span>
         </button>
       </div>
@@ -31,54 +31,41 @@
 
     <div id="section-lock" class="mb-8 p-6 border-4 border-slate-200 rounded-xl bg-slate-50 opacity-40 pointer-events-none">
       <h2 class="text-sm font-black uppercase text-slate-600 mb-4 tracking-widest">Step 2: Version Mapping</h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div class="space-y-4 border-r pr-8 border-slate-200">
-          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Your Repo (teebase-net)</h3>
-          <div>
-            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Source (Old Custom Branch)</label>
-            <select id="select-branch-old" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
-          </div>
-          <div>
-            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Target (New Work Branch)</label>
-            <select id="select-branch-new" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
-          </div>
+      <div class="grid grid-cols-2 gap-8">
+        <div class="space-y-4">
+          <h3 class="text-xs font-black text-slate-400 uppercase">Your Repo (teebase-net)</h3>
+          <div><label class="block text-[10px] font-black uppercase mb-1">Source (Old)</label><select id="select-branch-old" class="w-full p-2 border-2 rounded-lg font-mono text-xs"></select></div>
+          <div><label class="block text-[10px] font-black uppercase mb-1">Target (New)</label><select id="select-branch-new" class="w-full p-2 border-2 rounded-lg font-mono text-xs"></select></div>
         </div>
         <div class="space-y-4">
-          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Official Grist (gristlabs)</h3>
-          <div>
-            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Old Upstream Tag</label>
-            <select id="select-tag-old" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
-          </div>
-          <div>
-            <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">New Upstream Tag</label>
-            <select id="select-tag-new" class="w-full p-2 border-2 rounded-lg border-slate-300 bg-white font-mono text-xs cursor-pointer"></select>
-          </div>
+          <h3 class="text-xs font-black text-slate-400 uppercase">Official (gristlabs)</h3>
+          <div><label class="block text-[10px] font-black uppercase mb-1">Old Tag</label><select id="select-tag-old" class="w-full p-2 border-2 rounded-lg font-mono text-xs"></select></div>
+          <div><label class="block text-[10px] font-black uppercase mb-1">New Tag</label><select id="select-tag-new" class="w-full p-2 border-2 rounded-lg font-mono text-xs"></select></div>
         </div>
       </div>
-      <button id="btn-lock-scope" class="mt-8 bg-slate-900 hover:bg-black text-white font-black py-4 px-10 rounded-lg flex items-center justify-center transition-all shadow-lg text-sm uppercase tracking-widest">
+      <button id="btn-lock-scope" class="mt-8 bg-slate-900 text-white font-black py-4 px-10 rounded-lg w-full uppercase text-sm tracking-widest">
         LOCK VERSIONS & LOAD FILE LIST <span id="spin-lock" class="spinner"></span>
       </button>
     </div>
 
     <div id="section-workspace" class="hidden">
       <div class="border-t-4 border-slate-100 pt-8 mb-8">
-          <h2 class="text-xl font-black text-slate-800 mb-6">Tracked UI Files (<span id="file-count">0</span>)</h2>
+        <h2 class="text-xl font-black text-slate-800 mb-6 uppercase">Tracked Files (<span id="file-count">0</span>)</h2>
         <ul id="ui-file-list" class="bg-white border-2 border-slate-100 rounded-xl p-4 space-y-2 font-mono text-xs shadow-inner max-h-48 overflow-y-auto"></ul>
       </div>
 
       <div class="border-t-4 border-slate-100 pt-8">
-        <button id="btn-run-compare" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-5 rounded-xl flex justify-center items-center shadow-xl transition-all text-xl tracking-tight uppercase">
-          Analyze Upgrade Portability <span id="spin-compare" class="spinner"></span>
+        <button id="btn-run-compare" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-5 rounded-xl text-xl uppercase tracking-tight">
+          Analyze Portability <span id="spin-compare" class="spinner"></span>
         </button>
-        
         <div id="ui-results-area" class="mt-8 hidden overflow-x-auto">
-          <table class="w-full border-collapse bg-white rounded-xl overflow-hidden shadow-xl text-xs">
-            <thead class="bg-slate-900 text-white">
+          <table class="w-full bg-white rounded-xl overflow-hidden shadow-xl text-xs">
+            <thead class="bg-slate-900 text-white text-left">
               <tr>
-                <th class="p-4 text-left uppercase">File Path</th>
-                <th class="p-4 text-center border-x border-slate-700 uppercase">Your Work</th>
-                <th class="p-4 text-center border-r border-slate-700 uppercase">Upstream Status</th>
-                <th class="p-4 text-right uppercase">Advice</th>
+                <th class="p-4 uppercase">File Path</th>
+                <th class="p-4 text-center uppercase">Ported?</th>
+                <th class="p-4 text-center uppercase">Upstream?</th>
+                <th class="p-4 text-right uppercase">Action</th>
               </tr>
             </thead>
             <tbody id="ui-results-body"></tbody>
@@ -92,24 +79,13 @@
     const GITHUB = { owner: 'teebase-net', repo: 'grist-core', upstream: 'gristlabs', configFile: 'custom-files.json' };
     let session = { token: '', files: [] };
     const get = (id) => document.getElementById(id);
-    
-    const isFile = (str) => {
-        if (!str || typeof str !== 'string') return false;
-        const s = str.trim();
-        return s.length > 0 && !s.startsWith('-') && !s.includes('PURPOSE:') && s.includes('.');
-    };
+    const isFile = (str) => typeof str === 'string' && str.includes('.') && !str.startsWith('-');
 
     async function callGitHub(path) {
         const r = await fetch(`https://api.github.com${path}`, {
-            headers: { 
-                'Authorization': `token ${session.token}`, 
-                'Accept': 'application/vnd.github.v3+json' 
-            }
+            headers: { 'Authorization': `token ${session.token}`, 'Accept': 'application/vnd.github.v3+json' }
         });
-        if (!r.ok) {
-            const err = await r.json();
-            throw new Error(err.message || 'GitHub error');
-        }
+        if (!r.ok) { const err = await r.json(); throw new Error(err.message || 'GitHub error'); }
         return r.json();
     }
 
@@ -122,11 +98,53 @@
                 callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/tags?per_page=100`),
                 callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/branches?per_page=100`)
             ]);
-            
             const tOptions = tags.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
             const bOptions = branches.map(b => `<option value="${b.name}">${b.name}</option>`).join('');
-            
             get('select-tag-old').innerHTML = tOptions; get('select-tag-new').innerHTML = tOptions;
             get('select-branch-old').innerHTML = bOptions; get('select-branch-new').innerHTML = bOptions;
-            
-            get('msg-auth').innerText = "
+            get('msg-auth').innerText = "Connected Successfully."; get('msg-auth').className = "status-msg ok";
+            get('section-lock').classList.remove('opacity-40', 'pointer-events-none');
+            get('section-auth').classList.add('locked-section');
+        } catch (e) { get('msg-auth').innerText = e.message; get('msg-auth').className = "status-msg err"; }
+        finally { get('spin-auth').style.display = 'none'; }
+    });
+
+    get('btn-lock-scope').addEventListener('click', async () => {
+        get('spin-lock').style.display = 'inline-block';
+        try {
+            const res = await callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/contents/${GITHUB.configFile}?ref=${get('select-branch-new').value}`);
+            let content = atob(res.content.replace(/\s/g, ''));
+            content = content.replace(/,[ \t\r\n]*([\]}])/g, '$1'); // Fix trailing comma
+            session.files = JSON.parse(content).filter(isFile).map(f => f.trim());
+            get('file-count').innerText = session.files.length;
+            get('section-workspace').classList.remove('hidden');
+            get('section-lock').classList.add('locked-section');
+            get('ui-file-list').innerHTML = session.files.map(f => `<li class="border-b pb-1">📄 ${f}</li>`).join('');
+        } catch (e) { alert("Error: " + e.message); }
+        finally { get('spin-lock').style.display = 'none'; }
+    });
+
+    get('btn-run-compare').addEventListener('click', async () => {
+        get('spin-compare').style.display = 'inline-block';
+        get('ui-results-area').classList.remove('hidden');
+        try {
+            const [forkDiff, upstreamDiff] = await Promise.all([
+                callGitHub(`/repos/${GITHUB.owner}/${GITHUB.repo}/compare/${get('select-branch-old').value}...${get('select-branch-new').value}`),
+                callGitHub(`/repos/${GITHUB.upstream}/${GITHUB.repo}/compare/${get('select-tag-old').value}...${get('select-tag-new').value}`)
+            ]);
+            get('ui-results-body').innerHTML = session.files.map(path => {
+                const meChanged = forkDiff.files.some(f => f.filename === path);
+                const gristChanged = upstreamDiff.files.some(f => f.filename === path);
+                return `<tr class="${!gristChanged ? 'bg-emerald-50' : 'bg-white'} border-b">
+                    <td class="p-4 font-mono">${path}</td>
+                    <td class="p-4 text-center font-bold ${meChanged ? 'text-blue-600' : 'text-slate-300'}">${meChanged ? '✓ PORTED' : '---'}</td>
+                    <td class="p-4 text-center"><span class="px-2 py-1 rounded-full font-black ${gristChanged ? 'bg-orange-100 text-orange-700' : 'bg-emerald-500 text-white'}">${gristChanged ? '⚠️ CHANGED' : '✅ CLEAN'}</span></td>
+                    <td class="p-4 text-right">${gristChanged ? `<a href="https://github.com/${GITHUB.upstream}/${GITHUB.repo}/compare/${get('select-tag-old').value}...${get('select-tag-new').value}?diff=split" target="_blank" class="text-blue-600 underline">Review Diff</a>` : '<span class="text-emerald-700 font-bold uppercase">Ready</span>'}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) { alert("Error: " + e.message); }
+        finally { get('spin-compare').style.display = 'none'; }
+    });
+  </script>
+</body>
+</html>
